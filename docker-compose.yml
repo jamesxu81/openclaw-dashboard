@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  mission-control:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - MC_ADAPTER=stub       # Change to "rest" or "openclaw"
+      - PORT=3001
+    volumes:
+      - ./data:/app/data       # Persist kanban/settings data
+      - ./config.json:/app/config.json:ro
+    restart: unless-stopped

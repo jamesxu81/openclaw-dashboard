@@ -1,0 +1,41 @@
+{
+  "app": {
+    "name": "Mission Control",
+    "timezone": "Pacific/Auckland"
+  },
+  "backend": {
+    "port": 3001,
+    "dataFile": "./data/data.json",
+    "adapter": "stub"
+  },
+  "adapter": {
+    "openclaw": {
+      "binPath": "/opt/homebrew/bin/openclaw",
+      "workspaceRoot": "/path/to/.openclaw",
+      "cronDir": "/path/to/.openclaw/cron",
+      "workspaces": [
+        { "name": "workspace", "path": "/path/to/.openclaw/workspace" },
+        { "name": "workspace-coding-agent", "path": "/path/to/.openclaw/workspace-coding-agent" }
+      ],
+      "agents": [
+        { "id": "coding-agent", "model": "github-copilot/claude-sonnet-4.6" },
+        { "id": "research-agent", "model": "github-copilot/claude-haiku-4.5" }
+      ]
+    },
+    "rest": {
+      "baseUrl": "http://localhost:4000",
+      "token": "",
+      "agentRunEndpoint": "/api/run",
+      "cronHistoryEndpoint": "/api/cron/history",
+      "cronJobsEndpoint": "/api/cron/jobs",
+      "recentChangesEndpoint": "/api/changes"
+    },
+    "stub": {
+      "simulateDelays": false
+    }
+  },
+  "frontend": {
+    "apiBase": "http://localhost:3001",
+    "title": "Mission Control"
+  }
+}

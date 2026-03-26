@@ -1,0 +1,1306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mission Control — OpenClaw</title>
+<style>
+  :root{--bg:#f0f4f8;--sidebar:#0b1220;--accent:#0ea5ff;--card:#fff;--border:#e2e8f0;--text:#0b1220;--muted:#6b7280;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;--run:#3b82f6}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{display:flex;height:100vh;font-family:Inter,system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text)}
+  /* Sidebar */
+  #sidebar{width:200px;min-width:200px;background:var(--sidebar);display:flex;flex-direction:column;padding:16px 0}
+  #sidebar h1{color:#fff;font-size:14px;font-weight:700;padding:0 16px 20px;letter-spacing:.04em;opacity:.9}
+  #sidebar h1 span{color:var(--accent)}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;color:rgba(255,255,255,.65);font-size:13px;font-weight:500;border-left:3px solid transparent;transition:all .15s}
+  .nav-item:hover{color:#fff;background:rgba(255,255,255,.06)}
+  .nav-item.active{color:#fff;background:rgba(14,165,255,.15);border-left-color:var(--accent)}
+  .nav-item .icon{font-size:16px}
+  /* Main */
+  #main{flex:1;overflow:auto;padding:24px}
+  .tab{display:none}.tab.active{display:block}
+  h2{font-size:20px;font-weight:700;margin-bottom:16px}
+  /* Cards */
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px}
+  /* Status badges */
+  .badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+  .badge-ok{background:#dcfce7;color:#166534}
+  .badge-error{background:#fee2e2;color:#991b1b}
+  .badge-pending{background:#fef9c3;color:#854d0e}
+  .badge-running{background:#dbeafe;color:#1e40af}
+  .badge-done{background:#f0fdf4;color:#166534}
+  .badge-idle{background:#f1f5f9;color:#475569}
+  /* Table */
+  table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden;border:1px solid var(--border)}
+  th{background:#f8fafc;padding:10px 14px;text-align:left;font-size:12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border)}
+  td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--border)}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#f8fafc}
+  /* Buttons */
+  button{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer;transition:all .15s}
+  button:hover{background:#f1f5f9}
+  .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn-primary:hover{background:#0284c7}
+  .btn-danger{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
+  /* Kanban */
+  #kanban-board{display:flex;gap:16px;align-items:flex-start}
+  .kb-col{flex:1;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:12px;min-height:300px}
+  .kb-col h3{font-size:13px;font-weight:700;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .kb-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:grab;font-size:13px;box-shadow:0 1px 2px rgba(0,0,0,.04);transition:box-shadow .15s}
+  .kb-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08)}
+  .kb-card.dragging{opacity:.5}
+  .kb-col.drag-over{background:#e0f2fe;border-color:var(--accent)}
+  .kb-card-title{font-weight:600;margin-bottom:3px}
+  .kb-card-desc{font-size:11px;color:var(--muted)}
+  .kb-add{margin-top:8px}
+  .kb-add input{width:100%;padding:6px 8px;border:1px dashed var(--border);border-radius:6px;font-size:12px;background:transparent;outline:none}
+  .kb-add input:focus{border-color:var(--accent);background:#fff}
+  /* Office grid */
+  #office-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+  .agent-cell{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;font-size:12px}
+  .agent-cell .a-name{font-weight:700;margin-bottom:4px}
+  .agent-cell .a-task{color:var(--muted);font-size:11px}
+  /* Settings */
+  .setting-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+  .setting-row:last-child{border-bottom:none}
+  .toggle{position:relative;display:inline-block;width:40px;height:22px}
+  .toggle input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;background:#cbd5e1;border-radius:99px;transition:.2s;cursor:pointer}
+  .slider:before{content:'';position:absolute;width:16px;height:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+  input:checked+.slider{background:var(--accent)}
+  input:checked+.slider:before{transform:translateX(18px)}
+  .kb-card-meta{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap}
+  .kb-card-meta select{font-size:11px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:#f8fafc;cursor:pointer}
+  .btn-run{background:#dcfce7;color:#166534;border-color:#86efac;font-size:11px;padding:3px 8px}
+  .btn-run:hover{background:#bbf7d0}
+  .btn-run.running{background:#dbeafe;color:#1e40af;border-color:#93c5fd;cursor:not-allowed}
+  .btn-logs-sm{font-size:11px;padding:3px 8px}
+  /* Card edit modal */
+  .modal-box textarea{width:100%;min-height:80px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px;resize:vertical;margin-top:8px}
+  .modal-box label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-top:12px}
+  #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center}
+  #modal.open{display:flex}
+  .modal-box{background:#fff;border-radius:12px;padding:24px;max-width:560px;width:90%;max-height:80vh;overflow:auto}
+  .modal-box h3{margin-bottom:12px;font-size:16px}
+  .modal-box pre{background:#f6f8fa;padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:400px}
+  /* Digest */
+  .digest-section{margin-bottom:20px}
+  .digest-section h3{font-size:14px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+  /* Refresh btn */
+  #refresh-btn{float:right;margin-top:-40px}
+  /* Toast */
+  #toast{position:fixed;bottom:24px;right:24px;background:#0b1220;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:200}
+  /* Diff styles */
+  .file-chip{display:inline-block;background:var(--bg);padding:6px 10px;border-radius:5px;margin-right:6px;margin-bottom:6px;cursor:pointer;border:1px solid var(--border);transition:all .15s;font-size:12px;font-weight:500;user-select:none}
+  .file-chip:hover{background:#e2e8f0;border-color:var(--accent);box-shadow:0 2px 4px rgba(14,165,255,.1)}
+  .file-chip.expanded{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 8px rgba(14,165,255,.3)}
+  .diff-container{margin-top:8px;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:#f8fafc;max-height:0;opacity:0;transition:all .25s cubic-bezier(.4,0,.2,1)}
+  .diff-container.show{max-height:600px;opacity:1}
+  .diff-header{background:var(--border);padding:10px 12px;font-size:11px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+  .diff-header-left{display:flex;align-items:center;gap:8px}
+  .diff-stat-badge{display:inline-block;background:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:500}
+  .diff-stat-add{color:#166534;border:1px solid #86efac}
+  .diff-stat-del{color:#991b1b;border:1px solid #fca5a5}
+  .diff-content{font-family:'SF Mono','Monaco','Menlo',monospace;font-size:11px;padding:12px;max-height:400px;overflow-y:auto;background:#fff;white-space:pre-wrap;word-wrap:break-word;line-height:1.5}
+  .diff-line{margin:0;padding:4px 8px;display:block}
+  .diff-line-add{background:#dcfce7;color:#166534;border-left:3px solid #22c55e}
+  .diff-line-del{background:#fee2e2;color:#991b1b;border-left:3px solid #ef4444}
+  .diff-line-ctx{background:#f8fafc;color:#6b7280;border-left:3px solid #e2e8f0}
+  .diff-line-meta{background:#f1f5f9;color:#475569;padding:4px 8px;border-left:3px solid #94a3b8;font-weight:500;font-size:10px}
+  .diff-loading{padding:16px;color:var(--muted);font-size:12px;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px}
+  .diff-loading::after{content:'';display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--muted);animation:pulse .8s infinite}
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+  .diff-error{padding:12px;color:var(--err);font-size:11px;background:#fee2e2;border-left:3px solid #ef4444}
+</style>
+</head>
+<body>
+
+<nav id="sidebar">
+  <h1>🛰 <span>Mission</span> Control</h1>
+  <div class="nav-item active" onclick="show('calendar')" data-tab="calendar"><span class="icon">📅</span> Cron Jobs</div>
+  <div class="nav-item" onclick="show('kanban')" data-tab="kanban"><span class="icon">🗂</span> Kanban</div>
+  <div class="nav-item" onclick="show('team')" data-tab="team"><span class="icon">🤖</span> Team</div>
+  <div class="nav-item" onclick="show('office')" data-tab="office"><span class="icon">🏢</span> Office</div>
+  <div class="nav-item" onclick="show('digest')" data-tab="digest"><span class="icon">📋</span> Daily Digest</div>
+  <div class="nav-item" onclick="show('settings')" data-tab="settings"><span class="icon">⚙️</span> Settings</div>
+</nav>
+
+<div id="main">
+
+  <!-- CALENDAR -->
+  <div id="tab-calendar" class="tab active">
+    <h2>📅 Cron Jobs</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Frequency</th><th>Next Run</th><th>Last Status</th><th>Enabled</th></tr></thead>
+      <tbody id="cron-rows"><tr><td colspan="5" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+    </table>
+    <h3 style="margin-top:28px;margin-bottom:12px">📋 Run History</h3>
+    <div id="cron-history"><p style="color:var(--muted)">Loading…</p></div>
+  </div>
+
+  <!-- KANBAN -->
+  <div id="tab-kanban" class="tab">
+    <h2>🗂 Kanban Board</h2>
+    <div id="kanban-board"></div>
+  </div>
+
+  <!-- TEAM -->
+  <div id="tab-team" class="tab">
+    <h2>🤖 Team — Active Agents</h2>
+    <div id="agent-list"><p style="color:var(--muted)">Loading…</p></div>
+  </div>
+
+  <!-- OFFICE -->
+  <div id="tab-office" class="tab">
+    <style>
+      /* ── Office Building ── */
+      #office-building {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        max-width: 900px;
+        margin: 0 auto;
+        font-family: inherit;
+      }
+      .floor-label {
+        text-align: center;
+        font-size: 11px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: #555;
+        padding: 4px 0 8px;
+      }
+      .floor-divider {
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #1e3a5f 20%, #0ff2 50%, #1e3a5f 80%, transparent);
+        margin: 8px 0;
+      }
+
+      /* ── Room cards ── */
+      .office-room {
+        border-radius: 12px;
+        padding: 20px 24px;
+        position: relative;
+        transition: box-shadow .3s;
+      }
+      .office-room.boss {
+        border: 2px solid #c9a227;
+        background: linear-gradient(135deg, #1a1500 0%, #0d0d0d 60%, #1a1500 100%);
+        box-shadow: 0 0 24px #c9a2272a, inset 0 0 30px #c9a22710;
+      }
+      .office-room.manager {
+        border: 2px solid #1a6fff;
+        background: linear-gradient(135deg, #001433 0%, #0d0d0d 60%, #001433 100%);
+        box-shadow: 0 0 18px #1a6fff2a, inset 0 0 20px #1a6fff0d;
+      }
+      .office-room.employee {
+        border: 2px solid #2a3a4a;
+        background: linear-gradient(135deg, #0a1520 0%, #0d0d0d 100%);
+        box-shadow: 0 0 10px #0003;
+      }
+      .office-room.active-glow.boss   { box-shadow: 0 0 40px #c9a22766, inset 0 0 30px #c9a22718; }
+      .office-room.active-glow.manager{ box-shadow: 0 0 32px #1a6fff55, inset 0 0 20px #1a6fff14; }
+      .office-room.active-glow.employee{ box-shadow: 0 0 20px #00e5ff44; border-color: #00e5ff88; }
+
+      .room-title {
+        font-size: 10px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: #444;
+        margin-bottom: 14px;
+      }
+      .room-title.boss    { color: #c9a227bb; }
+      .room-title.manager { color: #1a6fffaa; }
+
+      /* ── Desk layout ── */
+      .desk-area {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .desk-area.boss    { gap: 28px; }
+      .desk-area.manager { gap: 22px; }
+
+      .avatar-wrap {
+        position: relative;
+        flex-shrink: 0;
+      }
+      .avatar-img {
+        border-radius: 50%;
+        object-fit: cover;
+        display: block;
+        border: 2px solid #333;
+      }
+      .avatar-emoji {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        border: 2px solid #555;
+        font-weight: 700;
+        background: #111;
+      }
+      .boss   .avatar-img,
+      .boss   .avatar-emoji { width: 72px; height: 72px; font-size: 32px; border-color: #c9a227; }
+      .manager .avatar-img,
+      .manager .avatar-emoji { width: 56px; height: 56px; font-size: 26px; border-color: #1a6fff; }
+      .employee .avatar-img,
+      .employee .avatar-emoji { width: 44px; height: 44px; font-size: 20px; border-color: #2a3a4a; }
+
+      /* floating animation */
+      @keyframes float {
+        0%,100% { transform: translateY(0px); }
+        50%      { transform: translateY(-5px); }
+      }
+      @keyframes pulse-glow {
+        0%,100% { opacity: .7; }
+        50%      { opacity: 1; }
+      }
+      .avatar-wrap { animation: float 4s ease-in-out infinite; }
+      .avatar-wrap:nth-child(1) { animation-delay: 0s; }
+
+      .status-dot {
+        position: absolute;
+        bottom: 2px; right: 2px;
+        width: 12px; height: 12px;
+        border-radius: 50%;
+        border: 2px solid #0d0d0d;
+        background: #444;
+      }
+      .status-dot.online  { background: #00e676; box-shadow: 0 0 6px #00e676; }
+      .status-dot.running { background: #ffea00; box-shadow: 0 0 6px #ffea00; animation: pulse-glow 1s infinite; }
+
+      .person-info { flex: 1; min-width: 0; }
+      .person-name {
+        font-weight: 700;
+        margin-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .boss   .person-name { font-size: 20px; color: #c9a227; }
+      .manager .person-name { font-size: 16px; color: #5b9fff; }
+      .employee .person-name { font-size: 14px; color: #ccc; }
+
+      .person-title { font-size: 11px; color: #555; margin-bottom: 8px; letter-spacing: 1px; }
+      .boss   .person-title { color: #8a6e1a; }
+      .manager .person-title { color: #1a4ea0; }
+
+      .status-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-size: 11px; padding: 2px 8px; border-radius: 10px;
+        background: #1a1a1a; color: #555; border: 1px solid #2a2a2a;
+      }
+      .status-badge.running { background: #1a1500; color: #ffea00; border-color: #4a3a00; }
+      .status-badge.idle    { background: #0a1a0a; color: #00e676; border-color: #0a3a0a; }
+
+      /* ── Desk furniture ── */
+      .desk-furniture {
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+      .monitor {
+        position: relative;
+      }
+      .monitor-screen {
+        border-radius: 3px 3px 0 0;
+        background: #0a1a2a;
+        border: 2px solid #2a3a4a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .boss   .monitor-screen { width: 54px; height: 36px; }
+      .manager .monitor-screen { width: 44px; height: 29px; }
+      .employee .monitor-screen { width: 34px; height: 23px; }
+
+      @keyframes scanline {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(200%); }
+      }
+      .monitor-screen::after {
+        content: '';
+        position: absolute;
+        width: 100%; height: 30%;
+        background: linear-gradient(transparent, #00e5ff18, transparent);
+        animation: scanline 3s linear infinite;
+      }
+      .monitor-screen-inner {
+        width: 80%; height: 70%;
+        background: repeating-linear-gradient(0deg, #001a2a, #001a2a 2px, #002a3a 2px, #002a3a 4px);
+        border-radius: 1px;
+      }
+      .monitor-stand {
+        width: 4px; height: 8px;
+        background: #2a3a4a;
+        margin: 0 auto;
+      }
+      .monitor-base {
+        border-radius: 2px;
+        background: #2a3a4a;
+      }
+      .boss   .monitor-base { width: 30px; height: 4px; }
+      .manager .monitor-base { width: 24px; height: 3px; }
+      .employee .monitor-base { width: 18px; height: 3px; }
+
+      .desk-surface {
+        height: 4px;
+        border-radius: 2px;
+        margin-top: 4px;
+        background: linear-gradient(90deg, #1a1a1a, #2a2a2a, #1a1a1a);
+      }
+      .boss   .desk-surface { width: 120px; }
+      .manager .desk-surface { width: 95px; }
+      .employee .desk-surface { width: 75px; }
+
+      /* ── Open floor (Elon + Bill) ── */
+      .open-floor {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      /* ── Corner office marker ── */
+      .corner-badge {
+        position: absolute; top: 12px; right: 14px;
+        font-size: 10px; color: #c9a22788;
+        letter-spacing: 2px; text-transform: uppercase;
+      }
+    </style>
+
+    <h2 style="margin-bottom:4px">🏢 Mission Control Office</h2>
+    <p style="color:#444;font-size:12px;margin-bottom:18px;letter-spacing:1px">LIVE AGENT STATUS</p>
+
+    <div id="office-building">
+      <!-- Floors rendered by JS -->
+      <p style="color:#555;text-align:center">Loading office…</p>
+    </div>
+  </div>
+
+  <!-- DIGEST -->
+  <div id="tab-digest" class="tab">
+    <h2>📋 Daily Digest</h2>
+    <div id="digest-content"><p style="color:var(--muted)">Loading…</p></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="tab-settings" class="tab">
+    <h2>⚙️ Tool Settings</h2>
+    <div class="card" id="settings-list"><p style="color:var(--muted)">Loading…</p></div>
+  </div>
+
+</div>
+
+<!-- Modal for logs / card edit -->
+<div id="modal">
+  <div class="modal-box">
+    <h3 id="modal-title">Logs</h3>
+    <div id="modal-body-wrap">
+      <pre id="modal-body">No logs available.</pre>
+    </div>
+    <!-- Card edit fields (shown when editing a card) -->
+    <div id="card-edit-fields" style="display:none">
+      <label>Agent Type</label>
+      <select id="card-agent-type">
+        <option value="research">🔍 Research</option>
+        <option value="coding">💻 Coding</option>
+      </select>
+      <label>Task Details / Prompt</label>
+      <textarea id="card-details" placeholder="Describe exactly what the agent should do…"></textarea>
+    </div>
+    <br>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="modal-save-btn" style="display:none" class="btn-primary" onclick="saveCardEdit()">Save</button>
+      <button onclick="closeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// API base can be overridden via: window.MC_API_BASE, meta tag, or defaults to same-origin
+const API = window.MC_API_BASE || (document.querySelector('meta[name="mc-api-base"]')?.content) || '';
+let dragCard = null, dragFrom = null;
+
+// ── Navigation ──────────────────────────────────────
+function show(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+  if (tab === 'calendar') loadCrons();
+  if (tab === 'kanban') loadKanban();
+  if (tab === 'team') loadAgents();
+  if (tab === 'office') loadOffice();
+  if (tab === 'digest') loadDigest();
+  if (tab === 'settings') loadSettings();
+}
+
+// ── Toast ────────────────────────────────────────────
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 2500);
+}
+
+// ── Modal ────────────────────────────────────────────
+function openModal(title, body) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').textContent = body || 'No logs available.';
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+// ── Status badge ─────────────────────────────────────
+function badge(s) {
+  const map = { ok:'ok', done:'done', failed:'error', error:'error', pending:'pending', running:'running', idle:'idle' };
+  const cls = map[s] || 'pending';
+  return `<span class="badge badge-${cls}">${s || 'unknown'}</span>`;
+}
+
+// ── Calendar ─────────────────────────────────────────
+function cronExprToHuman(expr) {
+  if (!expr) return '—';
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length < 5) return expr;
+  const [min, hour, dom, mon, dow] = parts;
+  const pad = n => String(n).padStart(2, '0');
+  const fmtTime = (h, m) => {
+    const hh = parseInt(h), mm = parseInt(m||0);
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    return `${((hh % 12) || 12)}:${pad(mm)} ${ampm}`;
+  };
+  if (dom === '*' && mon === '*' && dow === '*') return `Every day at ${fmtTime(hour, min)}`;
+  if (dom === '*' && mon === '*') {
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    if (dow.includes('-')) {
+      const [s, e] = dow.split('-');
+      return `${days[s]}–${days[e]} at ${fmtTime(hour, min)}`;
+    }
+    const dayList = dow.split(',').map(d => days[parseInt(d)]).join(', ');
+    return `Every ${dayList} at ${fmtTime(hour, min)}`;
+  }
+  return expr;
+}
+
+async function loadCrons() {
+  const rows = document.getElementById('cron-rows');
+  try {
+    const data = await fetch(API + '/api/cron/jobs').then(r => r.json());
+    const active = data.filter(c => c.enabled !== false);
+    if (!active.length) { rows.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center">No active cron jobs.</td></tr>'; }
+    else rows.innerHTML = active.map(c => {
+      const expr = c.schedule && c.schedule.expr ? c.schedule.expr : '';
+      const freq = cronExprToHuman(expr);
+      const nextMs = c.state && c.state.nextRunAtMs;
+      const nextRun = nextMs ? new Date(nextMs).toLocaleString('en-NZ', { weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+      const lastStatus = c.state && c.state.lastStatus;
+      const statusDot = lastStatus === 'ok' ? '🟢' : lastStatus === 'error' ? '🔴' : '⚪';
+      const enabledBadge = c.enabled ? '<span style="color:#4ade80;font-size:12px">● Active</span>' : '<span style="color:var(--muted);font-size:12px">○ Disabled</span>';
+      return `<tr>
+        <td><strong>${esc(c.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${esc(c.agentId || '')}</span></td>
+        <td style="font-size:13px">${esc(freq)}<br><span style="font-family:monospace;font-size:11px;color:var(--muted)">${esc(expr)}</span></td>
+        <td style="font-size:13px">${esc(nextRun)}</td>
+        <td style="font-size:13px">${statusDot} ${esc(lastStatus || '—')}</td>
+        <td>${enabledBadge}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { rows.innerHTML = `<tr><td colspan="5" style="color:var(--err)">Failed to load: ${e.message}</td></tr>`; }
+  loadCronHistory();
+}
+
+async function loadCronHistory() {
+  const el = document.getElementById('cron-history');
+  if (!el) return;
+  try {
+    const runs = await fetch(API + '/api/cron-history?limit=100').then(r => r.json());
+    if (!runs.length) { el.innerHTML = '<p style="color:var(--muted)">No run history yet.</p>'; return; }
+    // Group by job name, then by date within each job
+    // Group by date
+    const byDate = {};
+    runs.forEach(r => {
+      const d = new Date(r.ts).toLocaleDateString('en-NZ', { weekday:'short', year:'numeric', month:'short', day:'numeric' });
+      if (!byDate[d]) byDate[d] = [];
+      byDate[d].push(r);
+    });
+    el.innerHTML = Object.entries(byDate).map(([date, items]) => `
+      <div style="margin-bottom:12px">
+        <div style="font-weight:700;font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">${date}</div>
+        <table style="width:100%;border-collapse:collapse;background:var(--card);border-radius:8px;overflow:hidden;border:1px solid var(--border)">
+          <thead>
+            <tr style="background:#f8fafc;border-bottom:1px solid var(--border)">
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted)">Job Name</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted)">Time</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted)">Status</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted)">Duration</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted)">Model</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted)">Tokens</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted)">Summary</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(r => {
+              const t = new Date(r.ts).toLocaleTimeString('en-NZ', { hour:'2-digit', minute:'2-digit' });
+              const dur = r.durationMs ? `${(r.durationMs/1000).toFixed(1)}s` : '';
+              const ok = r.status === 'ok';
+              const model = r.model ? r.model.replace('github-copilot/','') : '';
+              const tokens = r.tokens ? `${r.tokens.toLocaleString()} tok` : '';
+              // Detect jobs that send email but summary doesn't confirm it was sent
+              const emailJobs = ['briefing','news','checker','summary','reminder','induction'];
+              const isEmailJob = emailJobs.some(k => r.jobName.toLowerCase().includes(k));
+              const sentKeywords = ['sent','emailed','delivered','发送','email sent','send'];
+              const emailConfirmed = !isEmailJob || sentKeywords.some(k => r.summary.toLowerCase().includes(k));
+              const displayStatus = !ok
+                ? `<span style="color:var(--err)">❌ failed</span>`
+                : emailConfirmed
+                  ? `<span style="color:var(--ok)">✅ ok</span>`
+                  : `<span style="color:var(--warn)" title="Job completed but email may not have been sent">⚠️ ok (no email?)</span>`;
+              const failReason = !ok && r.error
+                ? `<div style="font-size:11px;color:var(--err);margin-top:2px">↳ ${esc(r.error)}</div>` : '';
+              return `<tr style="border-top:1px solid var(--border);font-size:12px">
+                <td style="padding:7px 10px;font-weight:500">${esc(r.jobName)}</td>
+                <td style="padding:7px 10px;color:var(--muted);white-space:nowrap;width:60px">${t}</td>
+                <td style="padding:7px 10px">${displayStatus}${failReason}</td>
+                <td style="padding:7px 10px;color:var(--muted)">${dur}</td>
+                <td style="padding:7px 10px;color:var(--muted);font-size:11px;white-space:nowrap">${esc(model)}</td>
+                <td style="padding:7px 10px;color:var(--muted);font-size:11px;white-space:nowrap">${tokens}</td>
+                <td style="padding:7px 10px;color:var(--muted);font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.summary)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `).join('');
+  } catch(e) { el.innerHTML = `<p style="color:var(--err)">Failed: ${e.message}</p>`; }
+}
+
+async function toggleCron(id, el) {
+  try {
+    await fetch(`${API}/api/crons/${id}/toggle`, { method: 'POST' });
+    toast('Cron updated');
+  } catch { el.checked = !el.checked; toast('Failed to toggle cron'); }
+}
+
+// ── Kanban ────────────────────────────────────────────
+async function loadKanban() {
+  const board = document.getElementById('kanban-board');
+  try {
+    const data = await fetch(API + '/api/kanban').then(r => r.json());
+    board.innerHTML = '';
+    (data.columns || []).forEach(col => {
+      const div = document.createElement('div');
+      div.className = 'kb-col';
+      div.dataset.col = col.id;
+      div.innerHTML = `<h3>${esc(col.title)} <span style="font-weight:400;color:var(--muted)">(${col.cards.length})</span></h3>
+        <div class="kb-cards">${(col.id === 'done' ? [...(col.cards || [])].sort((a,b) => new Date(b.completedAt||0) - new Date(a.completedAt||0)) : (col.cards || [])).map(c => cardHTML(c, col.id)).join('')}</div>
+        ${col.id === 'todo' ? `<div class="kb-add"><input placeholder="+ Add card…" onkeydown="addCard(event,'${col.id}')"></div>` : ''}`;
+      div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
+      div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+      div.addEventListener('drop', e => { e.preventDefault(); div.classList.remove('drag-over'); dropCard(col.id); });
+      board.appendChild(div);
+    });
+  } catch(e) { board.innerHTML = `<p style="color:var(--err)">Failed to load kanban: ${e.message}</p>`; }
+}
+
+function cardHTML(c, colId) {
+  const running = c.agentStatus === 'running';
+  const agentIcon = c.agentType === 'coding' ? '💻' : '🔍';
+  const isDone = colId === 'done';
+  const isDoing = colId === 'doing';
+  const statusBadge = () => {
+    const s = c.agentStatus || 'done';
+    if (s === 'done' || s === 'ok') return `<span style="background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:4px;padding:2px 8px;font-size:11px">✅ Done</span>`;
+    if (s === 'error' || s === 'failed') return `<span style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:4px;padding:2px 8px;font-size:11px">❌ Failed</span>`;
+    return `<span style="background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;font-size:11px">● ${s}</span>`;
+  };
+  return `<div class="kb-card" draggable="true" data-id="${c.id}"
+    ondragstart="dragCard=this;dragFrom=this.closest('.kb-col').dataset.col;this.classList.add('dragging')"
+    ondragend="this.classList.remove('dragging')">
+    <div class="kb-card-title">${esc(c.title)}</div>
+    ${c.desc && c.desc !== c.title ? `<div class="kb-card-desc">${esc(c.desc)}</div>` : ''}
+    ${c.details ? `<div class="kb-card-desc" style="color:#0ea5ff">📋 Has details</div>` : ''}
+    ${isDone && c.completedAt ? `<div class="kb-card-desc" style="color:#6b7280;font-size:11px">✔ Completed ${new Date(c.completedAt).toLocaleString('en-NZ',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>` : ''}
+    <div class="kb-card-meta">
+      <span style="font-size:11px;color:var(--muted)">${agentIcon} ${c.agentType || 'research'}</span>
+      ${isDone ? statusBadge() : isDoing ? `<button class="btn-run running" disabled style="cursor:not-allowed;opacity:0.7">⏳ In Progress</button>` : `<button class="btn-run ${running ? 'running' : ''}" onclick="event.stopPropagation();runCard('${c.id}')" ${running ? 'disabled' : ''}>${running ? '⏳ Running…' : '▶ Run'}</button>`}
+      <button class="btn-logs-sm" onclick="event.stopPropagation();showCardLogs('${c.id}','${esc(c.title)}')">Logs</button>
+      <button class="btn-logs-sm" onclick="event.stopPropagation();editCard('${c.id}','${esc(c.title)}')">✏️</button>
+      <button class="btn-logs-sm" style="color:var(--err)" onclick="event.stopPropagation();deleteCard('${c.id}','${esc(c.title)}')">🗑</button>
+    </div>
+  </div>`;
+}
+
+async function deleteCard(id, title) {
+  if (!confirm(`Delete card: "${title}"?`)) return;
+  await fetch(`${API}/api/kanban/cards/${id}`, { method: 'DELETE' });
+  loadKanban();
+}
+
+async function addCard(e, colId) {
+  if (e.key !== 'Enter') return;
+  const val = e.target.value.trim();
+  if (!val) return;
+  await fetch(API + '/api/kanban/cards', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ columnId: colId, card: { title: val, desc: '' } }) });
+  e.target.value = '';
+  loadKanban();
+}
+
+async function dropCard(toCol) {
+  if (!dragCard || !dragFrom || dragFrom === toCol) return;
+  await fetch(API + '/api/kanban/move', { method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ fromColumn: dragFrom, toColumn: toCol, cardId: dragCard.dataset.id }) });
+  dragCard = null; dragFrom = null;
+  loadKanban();
+}
+
+// ── Team ──────────────────────────────────────────────
+async function loadAgents() {
+  const el = document.getElementById('agent-list');
+  try {
+    const agents = await fetch(API + '/api/agents').then(r => r.json());
+    if (!agents.length) { el.innerHTML = '<p style="color:var(--muted)">No agents registered.</p>'; return; }
+    // Load tasks for each agent in parallel
+    const withTasks = await Promise.all(agents.map(async a => {
+      const tasks = await fetch(`${API}/api/agents/${a.id}/tasks`).then(r => r.json()).catch(() => []);
+      return { ...a, tasks };
+    }));
+    el.innerHTML = withTasks.map(a => {
+      // Split tasks: done (sorted newest first) vs others
+      const doneTasks = a.tasks
+        .filter(t => t.column === 'done')
+        .sort((x, y) => new Date(y.completedAt || 0) - new Date(x.completedAt || 0));
+      const activeTasks = a.tasks.filter(t => t.column !== 'done');
+
+      const agentTableId = `task-table-${a.id}`;
+      const agentBtnId = `task-btn-${a.id}`;
+      const allTasks = [...activeTasks, ...doneTasks];
+      const taskRows = allTasks.length === 0
+        ? `<tr><td colspan="4" style="padding:8px;color:var(--muted);font-size:12px">No tasks run yet.</td></tr>`
+        : allTasks.map(t => {
+            const completedAt = t.completedAt
+              ? new Date(t.completedAt).toLocaleString('en-NZ',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})
+              : (t.column === 'done' ? '—' : '');
+            const descText = (t.desc && t.desc.trim()) ? esc(t.desc) : '<span style="color:var(--muted);font-style:italic">No description</span>';
+            return `
+              <tr style="font-size:12px;border-top:1px solid var(--border)">
+                <td style="padding:7px 8px;min-width:160px;max-width:220px;vertical-align:top">
+                  <div style="font-weight:500">${esc(t.title)}</div>
+                  <div style="margin-top:2px">${badge(t.status)}</div>
+                </td>
+                <td style="padding:7px 8px;font-size:11px;color:#555;white-space:pre-wrap;vertical-align:top;max-width:340px">${descText}</td>
+                <td style="padding:7px 8px;font-size:11px;vertical-align:top">${t.logsCount > 0 ? `<button class="btn-logs-sm" onclick="showLogs('card','${t.id}','${esc(t.title)}')">Logs (${t.logsCount})</button>` : '<span style="color:var(--muted)">—</span>'}</td>
+                <td style="padding:7px 8px;font-size:11px;color:var(--muted);white-space:nowrap;vertical-align:top">${completedAt}</td>
+              </tr>`;
+          }).join('');
+      return `
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+            <div style="font-size:28px">${a.avatar && (a.avatar.startsWith('http') || a.avatar.startsWith('avatar')) ? `<img src="${a.avatar}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;display:block" />` : (a.avatar || '🤖')}</div>
+            <div style="flex:1">
+              <div style="font-weight:700">${esc(a.name)}</div>
+              <div style="font-size:12px;color:var(--muted)">${esc(a.role || 'general')} · ${badge(a.status)}</div>
+              ${a.currentTask ? `<div style="font-size:12px;margin-top:4px">Current: <strong>${esc(a.currentTask)}</strong></div>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12px;font-weight:600;color:var(--muted)">TASK HISTORY (${allTasks.length}) — ${doneTasks.length} completed</div>
+            <button id="${agentBtnId}" onclick="toggleTaskTable('${agentTableId}','${agentBtnId}')" style="font-size:11px;padding:2px 10px;border:1px solid var(--border);background:var(--bg);color:var(--muted);border-radius:4px;cursor:pointer">▼ Collapse All</button>
+          </div>
+          <div id="${agentTableId}">
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr style="font-size:11px;color:var(--muted);background:var(--bg)">
+                <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Task</th>
+                <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Description</th>
+                <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Logs</th>
+                <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);white-space:nowrap">Completed At</th>
+              </tr></thead>
+              <tbody>${taskRows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = `<p style="color:var(--err)">Failed: ${e.message}</p>`; }
+}
+
+function toggleTaskTable(tableId, btnId) {
+  const tbl = document.getElementById(tableId);
+  const btn = document.getElementById(btnId);
+  if (!tbl) return;
+  const hidden = tbl.style.display === 'none';
+  tbl.style.display = hidden ? '' : 'none';
+  if (btn) btn.textContent = hidden ? '▼ Collapse All' : '► Expand All';
+}
+
+// ── Office (Pixel Art) ────────────────────────────────
+// ── Office ────────────────────────────────────────────
+async function loadOffice() {
+  const building = document.getElementById('office-building');
+  try {
+    const agents = await fetch(API + '/api/agents').then(r => r.json());
+    const byId = {};
+    agents.forEach(a => { byId[a.id] = a; });
+
+    const elonAgent = byId['research-agent'] || { name: 'Elon Musk', status: 'idle', avatar: 'avatars/iron-man.png', currentTask: null };
+    const billAgent = byId['coding-agent']   || { name: 'Bill Gates', status: 'idle', avatar: 'avatars/hulk.png', currentTask: null };
+
+    function monitorHtml(size) {
+      return `<div class="monitor">
+        <div class="monitor-screen"><div class="monitor-screen-inner"></div></div>
+        <div class="monitor-stand"></div>
+        <div class="monitor-base"></div>
+      </div>
+      <div class="desk-surface"></div>`;
+    }
+
+    function dotClass(status) {
+      if (status === 'running') return 'running';
+      if (status === 'idle' || status === 'active') return 'online';
+      return '';
+    }
+
+    function statusBadge(status, task) {
+      const isRunning = status === 'running';
+      return `<div class="status-badge ${isRunning ? 'running' : 'idle'}">
+        ${isRunning ? '⚡ Running' : '● ' + (status || 'idle')}
+        ${task ? ` — ${esc(task.substring(0,30))}` : ''}
+      </div>`;
+    }
+
+    function avatarHtml(a, cls) {
+      const dotCls = dotClass(a.status);
+      const animDelay = Math.random() * 2;
+      const img = a.avatar
+        ? `<img src="${esc(a.avatar)}" class="avatar-img" style="animation-delay:${animDelay.toFixed(1)}s" />`
+        : `<div class="avatar-emoji" style="animation-delay:${animDelay.toFixed(1)}s">🤖</div>`;
+      return `<div class="avatar-wrap" style="animation-delay:${animDelay.toFixed(1)}s">
+        ${img}
+        <div class="status-dot ${dotCls}"></div>
+      </div>`;
+    }
+
+    function personDesk(a, rank, title) {
+      const isRunning = a.status === 'running';
+      return `
+      <div class="desk-area ${rank}">
+        ${avatarHtml(a, rank)}
+        <div class="person-info">
+          <div class="person-name">${esc(a.name)} ${isRunning ? '⚡' : ''}</div>
+          <div class="person-title">${title}</div>
+          ${statusBadge(a.status, a.currentTask)}
+        </div>
+        <div class="desk-furniture">
+          ${monitorHtml(rank)}
+        </div>
+      </div>`;
+    }
+
+    // James (static — no agent entry, always "online")
+    const jamesDesk = `
+      <div class="desk-area boss">
+        <div class="avatar-wrap">
+          <div class="avatar-emoji" style="font-size:32px;width:72px;height:72px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #c9a227;background:#111">👔</div>
+          <div class="status-dot online"></div>
+        </div>
+        <div class="person-info">
+          <div class="person-name">James</div>
+          <div class="person-title">Director · Boss</div>
+          <div class="status-badge idle">● Online</div>
+        </div>
+        <div class="desk-furniture">
+          ${monitorHtml('boss')}
+        </div>
+      </div>`;
+
+    building.innerHTML = `
+      <!-- FLOOR 1: Boss -->
+      <div class="floor-label boss" style="color:#c9a22766">◆ Executive Floor</div>
+      <div class="office-room boss">
+        <div class="corner-badge">Corner Office</div>
+        <div class="room-title boss">Floor 3 — Director</div>
+        ${jamesDesk}
+      </div>
+
+      <div class="floor-divider"></div>
+
+      <!-- FLOOR 2: Manager -->
+      <div class="floor-label" style="color:#1a6fff66">◆ Management Floor</div>
+      <div class="office-room manager">
+        <div class="room-title manager">Floor 2 — Manager</div>
+        <div class="desk-area manager">
+          <div class="avatar-wrap">
+            <div class="avatar-emoji" style="font-size:26px;width:56px;height:56px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #1a6fff;background:#111">👸</div>
+            <div class="status-dot online"></div>
+          </div>
+          <div class="person-info">
+            <div class="person-name">Kimberly</div>
+            <div class="person-title">Main Agent · Operations Manager</div>
+            <div class="status-badge idle">● Active</div>
+          </div>
+          <div class="desk-furniture">
+            ${monitorHtml('manager')}
+          </div>
+        </div>
+      </div>
+
+      <div class="floor-divider"></div>
+
+      <!-- FLOOR 3: Open floor employees -->
+      <div class="floor-label">◆ Engineering Floor</div>
+      <div class="open-floor">
+        <div class="office-room employee ${elonAgent.status === 'running' ? 'active-glow' : ''}">
+          <div class="room-title">Desk — Research</div>
+          ${personDesk(elonAgent, 'employee', 'Research Agent · Analyst')}
+        </div>
+        <div class="office-room employee ${billAgent.status === 'running' ? 'active-glow' : ''}">
+          <div class="room-title">Desk — Engineering</div>
+          ${personDesk(billAgent, 'employee', 'Coding Agent · Engineer')}
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    document.getElementById('office-building').innerHTML = `<p style="color:var(--err)">Failed to load office: ${e.message}</p>`;
+  }
+}
+
+// ── Digest ────────────────────────────────────────────
+async function loadDigest() {
+  const el = document.getElementById('digest-content');
+  try {
+    const todayNZ = new Date().toLocaleDateString('en-CA', {timeZone:'Pacific/Auckland'});
+    const nzParts = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Pacific/Auckland',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+}).formatToParts(new Date());
+const elapsedMs = (parseInt(nzParts.find(p=>p.type==='hour').value)*3600 + parseInt(nzParts.find(p=>p.type==='minute').value)*60 + parseInt(nzParts.find(p=>p.type==='second').value))*1000;
+const sinceToday = Date.now() - elapsedMs; // for cron history API
+    const [d, cronRuns, cronJobs] = await Promise.all([
+      fetch(API + '/api/digest').then(r => r.json()),
+      fetch(`${API}/api/cron-history?since=${sinceToday}&limit=200`).then(r => r.json()),
+      fetch(API + '/api/cron/jobs').then(r => r.json()).catch(() => [])
+    ]);
+
+    // Fetch completed tasks per agent (last 24h)
+    const agentList = await fetch(API + '/api/agents').then(r => r.json()).catch(() => []);
+    const agentTaskResults = await Promise.all(
+      agentList.map(a => fetch(`${API}/api/agents/${a.id}/tasks`).then(r => r.json()).catch(() => []))
+    );
+    const agentTaskMap = {};
+    agentList.forEach((a, i) => {
+      const tasks = agentTaskResults[i];
+      const recent = tasks.filter(t => {
+        if (t.status !== 'done') return false;
+        let completedUtc = t.completedAt || null;
+        if (!completedUtc && t.lastLog) {
+          const m = t.lastLog.match(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/);
+          if (m) completedUtc = m[0];
+        }
+        if (!completedUtc) return false;
+        const completedDateNZ = new Date(completedUtc).toLocaleDateString('en-CA', {timeZone:'Pacific/Auckland'});
+        return completedDateNZ === todayNZ;
+      }).sort((a, b) => {
+        const getTs = t => {
+          if (t.completedAt) return new Date(t.completedAt).getTime();
+          const m = t.lastLog && t.lastLog.match(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/);
+          return m ? new Date(m[0]).getTime() : 0;
+        };
+        return getTs(b) - getTs(a);
+      });
+      agentTaskMap[a.id] = recent;
+    });
+    const cronJobMap = {};
+    for (const j of cronJobs) cronJobMap[j.id] = j;
+
+    // Deduplicate to latest run per job within past 24h
+    const jobMap = {};
+    for (const run of cronRuns) {
+      if (!jobMap[run.jobId] || run.ts > jobMap[run.jobId].ts) jobMap[run.jobId] = run;
+    }
+    const jobs24h = Object.values(jobMap).sort((a,b) => b.ts - a.ts);
+
+    function statusIcon(s) {
+      if (s === 'ok') return '✅ OK';
+      if (s === 'error') return '⚠️ ERROR';
+      if (s === 'timeout') return '⏱️ TIMEOUT';
+      return s || '—';
+    }
+    function durFmt(ms) {
+      if (!ms) return '—';
+      if (ms < 60000) return (ms/1000).toFixed(1) + 's';
+      return Math.round(ms/60000) + 'm ' + Math.round((ms%60000)/1000) + 's';
+    }
+    function fmtTime(ts) {
+      if (!ts) return '—';
+      return new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    }
+    function fmtNextRun(ts) {
+      if (!ts) return '—';
+      const diff = ts - Date.now();
+      if (diff < 0) return 'soon';
+      if (diff < 3600000) return 'in ' + Math.round(diff/60000) + 'm';
+      const d = new Date(ts);
+      if (d.toDateString() === new Date().toDateString()) return 'today ' + fmtTime(ts);
+      return d.toLocaleDateString([], {month:'short',day:'numeric'}) + ' ' + fmtTime(ts);
+    }
+
+    const cronTable = jobs24h.length ? `
+      <table style="margin-top:8px">
+        <thead><tr>
+          <th>Job Name</th><th>Summary</th><th>Status</th><th>Run Time</th><th>Duration</th><th>Next Run</th>
+        </tr></thead>
+        <tbody>
+          ${jobs24h.map(r => {
+            const job = cronJobMap[r.jobId];
+            const activeIcon = job ? (job.enabled ? '✅ Enabled' : '❌ Disabled') : '—';
+            return `<tr>
+            <td style="font-weight:500">${esc(r.jobName)}</td>
+            <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.summary || '—')}</td>
+            <td>${statusIcon(r.status)}</td>
+            <td>${fmtTime(r.ts)}</td>
+            <td>${durFmt(r.durationMs)}</td>
+            <td style="color:var(--muted)">${fmtNextRun(r.nextRunAtMs)}</td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table>` : '<p style="color:var(--muted);padding:8px 0">No cron jobs ran in the last 24 hours.</p>';
+
+    el.innerHTML = `
+      <div class="digest-section"><h3>📅 Date</h3><p style="font-size:24px;font-weight:700;color:var(--text);letter-spacing:.02em;margin-top:4px">${d.date}</p></div>
+      <div class="digest-section">
+        <h3>📌 Crons today</h3>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:8px">${jobs24h.length} job${jobs24h.length !== 1 ? 's' : ''} ran · <button onclick="loadDigest()" style="font-size:11px;padding:2px 8px">↻ Refresh</button></p>
+        ${cronTable}
+      </div>
+      <div class="digest-section">
+        <h3>🤖 Agent Tasks Completed Today</h3>
+        ${d.agents.length ? d.agents.map(a => {
+          const tasks = agentTaskMap[a.id] || [];
+          const taskHtml = tasks.length ? tasks.map(t => {
+            let ts = t.completedAt ? new Date(t.completedAt).getTime() : null;
+            if (!ts && t.lastLog) { const m = t.lastLog.match(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/); if (m) ts = new Date(m[0]).getTime(); }
+            const timeStr = ts ? new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—';
+            const title = t.title.length > 50 ? t.title.substring(0, 50) + '…' : t.title;
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px">
+              <span style="color:var(--text)">✅ ${esc(title)}</span>
+              <span style="color:var(--muted);white-space:nowrap;margin-left:8px">${timeStr}</span>
+            </div>`;
+          }).join('') : `<div style="font-size:11px;color:var(--muted);padding:4px 0">No tasks completed today</div>`;
+          return `<div class="card" style="padding:10px 14px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <span style="font-weight:500">${esc(a.name)}</span>
+              <div style="display:flex;align-items:center;gap:8px">
+                ${tasks.length ? `<span style="font-size:11px;color:var(--muted)">${tasks.length} task${tasks.length !== 1 ? 's' : ''}</span>` : ''}
+                ${badge(a.status)}
+              </div>
+            </div>
+            ${taskHtml}
+          </div>`;
+        }).join('') : '<p style="color:var(--muted)">No agents.</p>'}
+      </div>
+      <div class="digest-section">
+        <h3>📝 Recent Changes</h3>
+        ${await fetch(API + '/api/recent-changes').then(r => r.json()).then(changes => {
+          if (!changes.length) return '<p style="color:var(--muted)">No changes in the last 24 hours.</p>';
+          return changes.map((c, idx) => {
+            const addedLines = c.files.reduce((sum, f) => {
+              const fileStats = c.fileStats && c.fileStats[f];
+              return sum + (fileStats ? fileStats.additions : 0);
+            }, 0);
+            const deletedLines = c.files.reduce((sum, f) => {
+              const fileStats = c.fileStats && c.fileStats[f];
+              return sum + (fileStats ? fileStats.deletions : 0);
+            }, 0);
+            
+            return `<div class="card" style="padding:10px 14px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:12px">
+              <div style="flex:1;min-width:0">
+                <strong style="font-size:13px;display:block;margin-bottom:2px">${esc(c.message)}</strong>
+                <div style="font-size:11px;color:var(--muted)">${esc(c.workspace)} · ${esc(c.hash.substring(0,7))}</div>
+              </div>
+              <span style="font-size:11px;color:var(--muted);white-space:nowrap">${esc(new Date(c.date).toLocaleString('en-NZ',{timeZone:'Pacific/Auckland',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}))}</span>
+            </div>
+            <div style="font-size:11px;margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap">
+              ${c.files.slice(0,3).map((f, fidx) => `<span class="file-chip" data-file-key="${idx}:${esc(f)}" onclick="event.stopPropagation();toggleFileDiff(${idx},'${esc(f)}')" title="Click to see changes">${esc(f)}</span>`).join('')}
+              ${c.files.length > 3 ? `<span style="color:var(--muted);font-size:11px;padding:6px 0">+${c.files.length-3} more file${c.files.length-3 !== 1 ? 's' : ''}</span>` : ''}
+            </div>
+            ${addedLines > 0 || deletedLines > 0 ? `<div style="font-size:10px;color:var(--muted);margin-bottom:8px"><span style="color:#22c55e">+${addedLines}</span> <span style="color:#ef4444">−${deletedLines}</span></div>` : ''}
+            <div id="diffs-${idx}" style="margin-top:8px"></div>
+          </div>`}).join('');
+        })}
+      </div>`;
+  } catch(e) { el.innerHTML = `<p style="color:var(--err)">Failed: ${e.message}</p>`; }
+}
+
+// ── Settings ──────────────────────────────────────────
+async function loadSettings() {
+  const el = document.getElementById('settings-list');
+  try {
+    const data = await fetch(API + '/api/settings').then(r => r.json());
+    if (!data.length) { el.innerHTML = '<p style="color:var(--muted)">No settings available.</p>'; return; }
+    el.innerHTML = data.map(s => `
+      <div class="setting-row">
+        <div>
+          <strong>${esc(s.tool)}</strong>
+          <div style="font-size:11px;color:var(--muted)">${esc(s.permissions || '')}</div>
+        </div>
+        <label class="toggle"><input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSetting('${s.tool}',this)"><span class="slider"></span></label>
+      </div>`).join('');
+  } catch(e) { el.innerHTML = `<p style="color:var(--err)">Failed: ${e.message}</p>`; }
+}
+
+async function toggleSetting(tool, el) {
+  try {
+    await fetch(`${API}/api/settings/${tool}`, { method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ enabled: el.checked }) });
+    toast(`${tool} ${el.checked ? 'enabled' : 'disabled'}`);
+  } catch { el.checked = !el.checked; toast('Failed to update setting'); }
+}
+
+const pollingCards = new Set();
+
+async function runCard(id) {
+  try {
+    const r = await fetch(`${API}/api/kanban/cards/${id}/run`, { method: 'POST' }).then(r => r.json());
+    if (r.ok) {
+      toast('▶ Agent started!');
+      setTimeout(loadKanban, 800);
+      pollCardUntilDone(id);
+    } else toast('❌ ' + (r.error || 'Failed to start agent'));
+  } catch(e) { toast('❌ ' + e.message); }
+}
+
+function pollCardUntilDone(id) {
+  if (pollingCards.has(id)) return;
+  pollingCards.add(id);
+  const interval = setInterval(async () => {
+    try {
+      const data = await fetch(`${API}/api/kanban`).then(r => r.json());
+      let card = null;
+      for (const col of data.columns) { card = col.cards.find(c => c.id === id); if (card) break; }
+      if (!card || card.agentStatus !== 'running') {
+        clearInterval(interval);
+        pollingCards.delete(id);
+        loadKanban();
+        if (card?.agentStatus === 'done') toast('✅ Task done: ' + card.title.substring(0, 40));
+        else if (card?.agentStatus === 'failed') toast('❌ Task failed: ' + card?.title?.substring(0, 40));
+      }
+    } catch { clearInterval(interval); pollingCards.delete(id); }
+  }, 3000);
+}
+
+let editingCardId = null;
+function editCard(id, title) {
+  editingCardId = id;
+  // Fetch current card data
+  fetch(API + '/api/kanban').then(r => r.json()).then(data => {
+    let card = null;
+    for (const col of data.columns) { card = col.cards.find(c => c.id === id); if (card) break; }
+    document.getElementById('modal-title').textContent = '✏️ Edit: ' + (card?.title || title);
+    document.getElementById('modal-body-wrap').style.display = 'none';
+    document.getElementById('card-edit-fields').style.display = 'block';
+    document.getElementById('modal-save-btn').style.display = 'inline-block';
+    document.getElementById('card-agent-type').value = card?.agentType || 'research';
+    document.getElementById('card-details').value = card?.details || '';
+    document.getElementById('modal').classList.add('open');
+  });
+}
+
+async function saveCardEdit() {
+  const agentType = document.getElementById('card-agent-type').value;
+  const details = document.getElementById('card-details').value;
+  try {
+    await fetch(`${API}/api/kanban/cards/${editingCardId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentType, details })
+    });
+    toast('✅ Card updated');
+    closeModal();
+    loadKanban();
+  } catch(e) { toast('❌ ' + e.message); }
+}
+
+function cleanLogs(logs) {
+  return logs.map(line => {
+    // Strip timestamp prefix for display
+    const m = line.match(/^\[[\d\-T:.Z]+\] ([\s\S]+)/);
+    const ts = line.match(/^\[([\d\-T:.Z]+)\]/)?.[1]?.replace('T',' ').replace('Z','').substring(0,19) || '';
+    const body = m ? m[1] : line;
+    // Try to parse JSON blobs and extract useful text
+    try {
+      const obj = JSON.parse(body);
+      if (obj.result?.payloads) {
+        const text = obj.result.payloads.map(p => p.text || '').filter(Boolean).join('\n');
+        return `[${ts}] ✅ Agent reply:\n${text}`;
+      }
+      if (obj.status) return `[${ts}] status: ${obj.status}${obj.summary ? ' · ' + obj.summary : ''}`;
+    } catch {}
+    return `[${ts}] ${body}`;
+  }).join('\n');
+}
+
+async function showCardLogs(id, name) {
+  try {
+    const logs = await fetch(`${API}/api/kanban/cards/${id}/logs`).then(r => r.json());
+    document.getElementById('modal-body-wrap').style.display = 'block';
+    document.getElementById('card-edit-fields').style.display = 'none';
+    document.getElementById('modal-save-btn').style.display = 'none';
+    const text = Array.isArray(logs) ? cleanLogs(logs) : (typeof logs === 'string' ? logs : JSON.stringify(logs, null, 2));
+    openModal(`Logs — ${name}`, text.trim().length ? text : 'No logs yet. Run the agent first.');
+  } catch(e) { openModal(`Logs — ${name}`, `Error: ${e.message}`); }
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  document.getElementById('modal-body-wrap').style.display = 'block';
+  document.getElementById('card-edit-fields').style.display = 'none';
+  document.getElementById('modal-save-btn').style.display = 'none';
+  editingCardId = null;
+}
+
+// ── Logs ──────────────────────────────────────────────
+async function showLogs(type, id, name) {
+  try {
+    const url = type === 'card'
+      ? `${API}/api/kanban/cards/${id}/logs`
+      : `${API}/api/${type}s/${id}/logs`;
+    const logs = await fetch(url).then(r => r.json());
+    const text = Array.isArray(logs) ? logs.join('\n') : (typeof logs === 'string' ? logs : JSON.stringify(logs, null, 2));
+    openModal(`Logs — ${name}`, text.trim().length ? text : 'No logs available.');
+  } catch(e) { openModal(`Logs — ${name}`, `Error loading logs: ${e.message}`); }
+}
+
+// ── Diff viewer ──────────────────────────────────────
+const diffCache = {};
+const expandedDiffs = {};
+
+function toggleFileDiff(changeIdx, filename) {
+  const key = `${changeIdx}:${filename}`;
+  const chip = document.querySelector(`[data-file-key="${key}"]`);
+  let container = document.getElementById(`diff-${key}`);
+  
+  if (expandedDiffs[key]) {
+    // Collapse
+    if (container) container.classList.remove('show');
+    if (chip) chip.classList.remove('expanded');
+    expandedDiffs[key] = false;
+  } else {
+    // Expand
+    expandedDiffs[key] = true;
+    if (chip) chip.classList.add('expanded');
+    
+    if (!container) {
+      // Create container
+      const diffContainer = document.createElement('div');
+      diffContainer.id = `diff-${key}`;
+      diffContainer.className = 'diff-container';
+      diffContainer.innerHTML = '<div class="diff-loading">Loading diff…</div>';
+      
+      // Find the parent diffs container and insert
+      const parent = document.getElementById(`diffs-${changeIdx}`);
+      if (parent) parent.appendChild(diffContainer);
+      
+      // Fetch diff data
+      fetchAndRenderDiff(key, changeIdx, filename, diffContainer);
+    } else {
+      container.classList.add('show');
+    }
+  }
+}
+
+async function fetchAndRenderDiff(key, changeIdx, filename, container) {
+  try {
+    // Try to fetch from API
+    const diffData = await fetch(`${API}/api/recent-changes/${changeIdx}/diff?file=${encodeURIComponent(filename)}`)
+      .then(r => r.json())
+      .catch(() => null);
+    
+    if (diffData && diffData.diff) {
+      diffCache[key] = diffData.diff;
+      renderDiffContent(container, filename, diffData.diff, diffData.stats, key);
+      // Only add .show class AFTER content is rendered so animation is visible with content
+      setTimeout(() => container.classList.add('show'), 10);
+    } else {
+      // Fallback: show placeholder
+      container.innerHTML = `<div class="diff-error">📄 No diff data available. File may have been newly created or deleted.</div>`;
+      // Still show the error container
+      setTimeout(() => container.classList.add('show'), 10);
+    }
+  } catch(e) {
+    container.innerHTML = `<div class="diff-error">⚠️ Error loading diff: ${esc(e.message)}</div>`;
+    // Still show the error container
+    setTimeout(() => container.classList.add('show'), 10);
+  }
+}
+
+function renderDiffContent(container, filename, diffText, stats, key) {
+  const lines = diffText.split('\n');
+  const diffLines = [];
+  let addCount = 0, delCount = 0;
+  
+  lines.forEach(line => {
+    let cls = 'diff-line-ctx';
+    if (line.startsWith('+++') || line.startsWith('---')) {
+      cls = 'diff-line-meta';
+    } else if (line.startsWith('+') && !line.startsWith('+++')) {
+      cls = 'diff-line-add';
+      addCount++;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      cls = 'diff-line-del';
+      delCount++;
+    }
+    
+    diffLines.push(`<div class="diff-line ${cls}">${esc(line)}</div>`);
+  });
+  
+  const statBadges = `
+    ${addCount > 0 ? `<span class="diff-stat-badge diff-stat-add">+${addCount}</span>` : ''}
+    ${delCount > 0 ? `<span class="diff-stat-badge diff-stat-del">−${delCount}</span>` : ''}
+  `;
+  
+  container.innerHTML = `
+    <div class="diff-header">
+      <div class="diff-header-left">
+        <span style="font-weight:600">📄 ${esc(filename)}</span>
+        ${statBadges}
+      </div>
+      <button onclick="collapseDiff('${key}')" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0;width:24px;height:24px;display:flex;align-items:center;justify-content:center;hover:opacity:.7" title="Close diff">✕</button>
+    </div>
+    <div class="diff-content">${diffLines.join('')}</div>`;
+  
+  // NOTE: .show class is now added in fetchAndRenderDiff() AFTER content renders
+  // This ensures the animation plays with the actual content visible
+}
+
+function collapseDiff(key) {
+  const container = document.getElementById(`diff-${key}`);
+  const chip = document.querySelector(`[data-file-key="${key}"]`);
+  if (container) {
+    container.classList.remove('show');
+    setTimeout(() => { 
+      if (container && container.parentElement) container.remove();
+    }, 250);
+  }
+  if (chip) chip.classList.remove('expanded');
+  expandedDiffs[key] = false;
+}
+
+// ── Helpers ───────────────────────────────────────────
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ──────────────────────────────────────────────
+loadCrons();
+// Resume polling for any cards already running
+fetch(`${API}/api/kanban`).then(r => r.json()).then(data => {
+  for (const col of data.columns)
+    for (const card of col.cards)
+      if (card.agentStatus === 'running') pollCardUntilDone(card.id);
+}).catch(() => {});
+</script>
+</body>
+</html>
