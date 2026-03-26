@@ -224,9 +224,16 @@ app.get('/api/recent-changes/:changeIdx/diff', async (req, res) => {
   const file = req.query.file;
   if (!file) return res.status(400).json({ error: 'Missing file parameter' });
   try {
+    // Ensure cache is populated
+    if (_cachedChanges.length === 0) {
+      _cachedChanges = await adapter.getRecentChanges();
+    }
     const diff = await adapter.getFileDiff(parseInt(req.params.changeIdx), file, _cachedChanges);
     res.json({ file, diff: diff || 'No diff available' });
-  } catch (e) { res.json({ file, diff: 'Could not fetch diff' }); }
+  } catch (e) {
+    console.error('[diff error]', e.message);
+    res.json({ file, diff: `Error: ${e.message}` });
+  }
 });
 
 // ── Docs ──────────────────────────────────────────────
@@ -265,6 +272,35 @@ app.get('/api/data', (req, res) => res.json(load()));
 // ── Config endpoint (frontend can fetch API base, title, etc.) ──
 app.get('/api/config', (req, res) => {
   res.json({ title: config.app?.name || 'Mission Control', adapter: adapterName });
+});
+
+// ── Config full API ───────────────────────────────────
+app.get('/api/config/full', (req, res) => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    res.json(cfg);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/config/full', (req, res) => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const patch = req.body;
+    function deepMerge(target, source) {
+      for (const key of Object.keys(source)) {
+        if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+          if (!target[key]) target[key] = {};
+          deepMerge(target[key], source[key]);
+        } else {
+          target[key] = source[key];
+        }
+      }
+      return target;
+    }
+    deepMerge(cfg, patch);
+    fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
+    res.json({ ok: true, config: cfg });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 const PORT = process.env.PORT || config.backend?.port || 3001;

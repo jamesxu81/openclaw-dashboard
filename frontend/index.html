@@ -389,8 +389,72 @@
 
   <!-- SETTINGS -->
   <div id="tab-settings" class="tab">
-    <h2>⚙️ Tool Settings</h2>
-    <div class="card" id="settings-list"><p style="color:var(--muted)">Loading…</p></div>
+    <h2>⚙️ Settings</h2>
+
+    <!-- Section 1: App Settings -->
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:14px">🌐 App Settings</h3>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        <div style="flex:1;min-width:180px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">App Name</label>
+          <input id="cfg-app-name" type="text" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        </div>
+        <div style="flex:1;min-width:180px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Timezone</label>
+          <input id="cfg-app-tz" type="text" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        </div>
+      </div>
+      <button class="btn-primary" onclick="saveAppSettings()">Save App Settings</button>
+    </div>
+
+    <!-- Section 2: Backend -->
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">🔧 Backend</h3>
+      <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;font-size:12px;color:#854d0e;margin-bottom:14px">
+        ⚠️ Backend restart required for changes to take effect
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        <div style="flex:1;min-width:160px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Adapter</label>
+          <select id="cfg-backend-adapter" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+            <option value="openclaw">openclaw</option>
+            <option value="stub">stub</option>
+            <option value="rest">rest</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:120px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Port</label>
+          <input id="cfg-backend-port" type="number" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        </div>
+      </div>
+      <button class="btn-primary" onclick="saveBackendSettings()">Save Backend Settings</button>
+    </div>
+
+    <!-- Section 3: Agents -->
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:14px">🤖 Agents</h3>
+      <table id="cfg-agents-table" style="margin-bottom:10px">
+        <thead><tr><th>Agent ID</th><th>Model</th><th>Actions</th></tr></thead>
+        <tbody id="cfg-agents-body"></tbody>
+      </table>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button onclick="addAgentRow()">+ Add Agent</button>
+        <button class="btn-primary" onclick="saveAgentsSettings()">Save Agents</button>
+      </div>
+    </div>
+
+    <!-- Section 4: Workspaces -->
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:14px">📁 Workspaces <span style="font-size:11px;font-weight:400;color:var(--muted)">(openclaw adapter)</span></h3>
+      <table id="cfg-workspaces-table" style="margin-bottom:10px">
+        <thead><tr><th>Name</th><th>Path</th><th>Actions</th></tr></thead>
+        <tbody id="cfg-workspaces-body"></tbody>
+      </table>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button onclick="addWorkspaceRow()">+ Add Workspace</button>
+        <button class="btn-primary" onclick="saveWorkspacesSettings()">Save Workspaces</button>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -1037,19 +1101,112 @@ const sinceToday = Date.now() - elapsedMs; // for cron history API
 
 // ── Settings ──────────────────────────────────────────
 async function loadSettings() {
-  const el = document.getElementById('settings-list');
   try {
-    const data = await fetch(API + '/api/settings').then(r => r.json());
-    if (!data.length) { el.innerHTML = '<p style="color:var(--muted)">No settings available.</p>'; return; }
-    el.innerHTML = data.map(s => `
-      <div class="setting-row">
-        <div>
-          <strong>${esc(s.tool)}</strong>
-          <div style="font-size:11px;color:var(--muted)">${esc(s.permissions || '')}</div>
-        </div>
-        <label class="toggle"><input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSetting('${s.tool}',this)"><span class="slider"></span></label>
-      </div>`).join('');
-  } catch(e) { el.innerHTML = `<p style="color:var(--err)">Failed: ${e.message}</p>`; }
+    const cfg = await fetch(API + '/api/config/full').then(r => r.json());
+
+    // App settings
+    document.getElementById('cfg-app-name').value = cfg.app?.name || '';
+    document.getElementById('cfg-app-tz').value = cfg.app?.timezone || '';
+
+    // Backend settings
+    const adapterSel = document.getElementById('cfg-backend-adapter');
+    adapterSel.value = cfg.backend?.adapter || 'stub';
+    document.getElementById('cfg-backend-port').value = cfg.backend?.port || 3001;
+
+    // Agents
+    const agents = cfg.adapter?.openclaw?.agents || [];
+    renderAgentsTable(agents);
+
+    // Workspaces
+    const workspaces = cfg.adapter?.openclaw?.workspaces || [];
+    renderWorkspacesTable(workspaces);
+  } catch(e) { toast('Failed to load settings: ' + e.message); }
+}
+
+function renderAgentsTable(agents) {
+  const tbody = document.getElementById('cfg-agents-body');
+  tbody.innerHTML = agents.map((a, i) => `
+    <tr data-idx="${i}">
+      <td><input type="text" value="${esc(a.id||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-id-input"></td>
+      <td><input type="text" value="${esc(a.model||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-model-input"></td>
+      <td><button class="btn-danger" onclick="this.closest('tr').remove()">Delete</button></td>
+    </tr>`).join('');
+}
+
+function renderWorkspacesTable(workspaces) {
+  const tbody = document.getElementById('cfg-workspaces-body');
+  tbody.innerHTML = Object.entries(workspaces).map(([name, wpath]) => `
+    <tr>
+      <td><input type="text" value="${esc(name)}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="ws-name-input"></td>
+      <td><input type="text" value="${esc(wpath||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="ws-path-input"></td>
+      <td><button class="btn-danger" onclick="this.closest('tr').remove()">Delete</button></td>
+    </tr>`).join('');
+}
+
+function addAgentRow() {
+  const tbody = document.getElementById('cfg-agents-body');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" placeholder="agent-id" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-id-input"></td>
+    <td><input type="text" placeholder="model-name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-model-input"></td>
+    <td><button class="btn-danger" onclick="this.closest('tr').remove()">Delete</button></td>`;
+  tbody.appendChild(tr);
+}
+
+function addWorkspaceRow() {
+  const tbody = document.getElementById('cfg-workspaces-body');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" placeholder="workspace-name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="ws-name-input"></td>
+    <td><input type="text" placeholder="/path/to/workspace" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="ws-path-input"></td>
+    <td><button class="btn-danger" onclick="this.closest('tr').remove()">Delete</button></td>`;
+  tbody.appendChild(tr);
+}
+
+async function saveAppSettings() {
+  const name = document.getElementById('cfg-app-name').value.trim();
+  const timezone = document.getElementById('cfg-app-tz').value.trim();
+  try {
+    const r = await fetch(API + '/api/config/full', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ app: { name, timezone } }) }).then(r => r.json());
+    if (r.ok) toast('✅ App settings saved'); else toast('❌ ' + (r.error || 'Save failed'));
+  } catch(e) { toast('❌ ' + e.message); }
+}
+
+async function saveBackendSettings() {
+  const adapter = document.getElementById('cfg-backend-adapter').value;
+  const port = parseInt(document.getElementById('cfg-backend-port').value) || 3001;
+  try {
+    const r = await fetch(API + '/api/config/full', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ backend: { adapter, port } }) }).then(r => r.json());
+    if (r.ok) toast('✅ Backend settings saved (restart required)'); else toast('❌ ' + (r.error || 'Save failed'));
+  } catch(e) { toast('❌ ' + e.message); }
+}
+
+async function saveAgentsSettings() {
+  const rows = document.querySelectorAll('#cfg-agents-body tr');
+  const agents = [];
+  rows.forEach(row => {
+    const id = row.querySelector('.agent-id-input')?.value.trim();
+    const model = row.querySelector('.agent-model-input')?.value.trim();
+    if (id) agents.push({ id, model });
+  });
+  try {
+    const r = await fetch(API + '/api/config/full', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adapter: { openclaw: { agents } } }) }).then(r => r.json());
+    if (r.ok) toast('✅ Agents saved'); else toast('❌ ' + (r.error || 'Save failed'));
+  } catch(e) { toast('❌ ' + e.message); }
+}
+
+async function saveWorkspacesSettings() {
+  const rows = document.querySelectorAll('#cfg-workspaces-body tr');
+  const workspaces = {};
+  rows.forEach(row => {
+    const name = row.querySelector('.ws-name-input')?.value.trim();
+    const wpath = row.querySelector('.ws-path-input')?.value.trim();
+    if (name) workspaces[name] = wpath || '';
+  });
+  try {
+    const r = await fetch(API + '/api/config/full', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adapter: { openclaw: { workspaces } } }) }).then(r => r.json());
+    if (r.ok) toast('✅ Workspaces saved'); else toast('❌ ' + (r.error || 'Save failed'));
+  } catch(e) { toast('❌ ' + e.message); }
 }
 
 async function toggleSetting(tool, el) {

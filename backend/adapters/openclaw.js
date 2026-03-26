@@ -256,7 +256,11 @@ class OpenClawAdapter {
     const change = allChanges[changeIdx];
     const ws = this.workspaces.find(w => w.name === change.workspace);
     if (!ws) throw new Error('Workspace not found');
-    return execSync(`/usr/bin/git -C "${ws.path}" show ${change._hash} -- "${filename}"`, { encoding: 'utf8', timeout: 5000 });
+    const hash = change.hash || change._hash;
+    if (!hash) throw new Error('No hash in change');
+    // Get full hash from short hash
+    const fullHash = execSync(`/usr/bin/git -C "${ws.path}" rev-parse ${hash}`, { encoding: 'utf8', timeout: 5000 }).trim();
+    return execSync(`/usr/bin/git -C "${ws.path}" show ${fullHash} -- "${filename}"`, { encoding: 'utf8', timeout: 5000 });
   }
 }
 
