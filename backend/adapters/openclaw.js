@@ -70,27 +70,125 @@ class OpenClawAdapter {
   // --- Agent runner ---
   async runCard(card, cardId, appendLog, onComplete) {
     const agentType = card.agentType || 'research';
-    const agentId = agentType === 'coding' ? 'coding-agent' : 'research-agent';
-    const prompt = card.details ? `${card.title}\n\nDetails:\n${card.details}` : card.title;
-    appendLog(cardId, `Starting ${agentType} agent via OpenClaw...`);
+    // Map card agentType to real OpenClaw agent id
+    const agentId = (() => {
+      if (agentType === 'coding') return 'coding-agent';
+      if (agentType === 'research') return 'research-agent';
+      // Allow explicit agent ids (e.g. "coding-agent", "main")
+      return agentType.includes('-') ? agentType : `${agentType}-agent`;
+    })();
 
-    const args = ['agent', '--agent', agentId, '--session-id', `kanban-${cardId}`, '--message', prompt, '--json'];
+    const prompt = card.details ? `${card.title}\n\nDetails:\n${card.details}` : card.title;
+    const mcBase = 'http://localhost:3001';
+
+    appendLog(cardId, `🚀 Assigning to agent: ${agentId}`);
+
+    // 1. Update agent status → running BEFORE spawning
+    try {
+      const patchRes = await fetch(`${mcBase}/api/agents/${agentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'running', currentTask: card.title }),
+      });
+      if (patchRes.ok) {
+        appendLog(cardId, `✅ Agent ${agentId} status → running`);
+      } else {
+        appendLog(cardId, `⚠️ Could not update agent status (${patchRes.status})`);
+      }
+    } catch (e) {
+      appendLog(cardId, `⚠️ Agent status update failed: ${e.message}`);
+    }
+
+    // 2. Spawn the agent via openclaw agent CLI (synchronous, returns JSON)
+    const sessionId = `kanban-${cardId}`;
+    const args = [
+      'agent',
+      '--agent', agentId,
+      '--session-id', sessionId,
+      '--message', prompt,
+      '--json',
+    ];
+
+    appendLog(cardId, `⚙️ Running: openclaw agent --agent ${agentId} --session-id ${sessionId}`);
+
     const proc = spawn(this.binPath, args, {
       env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || ''}` }
     });
 
-    proc.stdout.on('data', d => {
-      const line = d.toString().trim();
-      if (line) appendLog(cardId, line.substring(0, 200));
-    });
+    let stdoutBuf = '';
+    let stderrBuf = '';
+
+    proc.stdout.on('data', d => { stdoutBuf += d.toString(); });
     proc.stderr.on('data', d => {
       const line = d.toString().trim();
-      if (line) appendLog(cardId, '[stderr] ' + line.substring(0, 200));
+      // Filter out config warning noise
+      if (line && !line.startsWith('Config warnings') && !line.includes('plugin disabled')) {
+        stderrBuf += line + '\n';
+        appendLog(cardId, '[stderr] ' + line.substring(0, 300));
+      }
     });
-    proc.on('close', code => onComplete(code === 0));
-    proc.on('error', e => {
+
+    proc.on('error', async e => {
       appendLog(cardId, `❌ Failed to start agent: ${e.message}`);
+      // Reset agent status → idle
+      try {
+        await fetch(`${mcBase}/api/agents/${agentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'idle', currentTask: null }),
+        });
+      } catch {}
       onComplete(false);
+    });
+
+    proc.on('close', async code => {
+      let success = code === 0;
+      let summary = '';
+
+      // Parse JSON output from openclaw agent --json
+      if (stdoutBuf.trim()) {
+        try {
+          const json = JSON.parse(stdoutBuf.trim());
+          if (json.status === 'ok') {
+            success = true;
+            summary = json.result?.meta ? `✅ Done in ${json.result.meta.durationMs}ms` : '✅ Completed';
+            // Log agent reply text if available
+            const payloads = json.result?.payloads || [];
+            for (const p of payloads) {
+              if (p.text) appendLog(cardId, `💬 Agent reply: ${p.text.substring(0, 500)}`);
+            }
+          } else {
+            success = false;
+            summary = `❌ Agent returned status: ${json.status}`;
+          }
+          appendLog(cardId, summary);
+        } catch {
+          // Not JSON or partial — treat raw output as log
+          const lines = stdoutBuf.trim().split('\n');
+          for (const line of lines) {
+            if (line.trim()) appendLog(cardId, line.substring(0, 300));
+          }
+          summary = success ? '✅ Completed (exit 0)' : `❌ Failed (exit ${code})`;
+          appendLog(cardId, summary);
+        }
+      } else {
+        summary = success ? '✅ Completed (no output)' : `❌ Failed (exit ${code}, no output)`;
+        appendLog(cardId, summary);
+      }
+
+      // 3. Reset agent status → idle
+      try {
+        await fetch(`${mcBase}/api/agents/${agentId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'idle', currentTask: null }),
+        });
+        appendLog(cardId, `🔵 Agent ${agentId} status → idle`);
+      } catch (e) {
+        appendLog(cardId, `⚠️ Could not reset agent status: ${e.message}`);
+      }
+
+      onComplete(success);
     });
 
     return { ok: true };
