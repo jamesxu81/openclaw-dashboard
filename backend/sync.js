@@ -76,15 +76,10 @@ function ensureSettings(data) {
 
 function ensureAgents(data) {
   if (!data.agents) {
-    // Seed demo agents for stub mode
-    if (!isOpenClaw) {
-      data.agents = [
-        { id: 'research-agent', name: 'Elon Musk', role: 'Research Agent', status: 'idle', avatar: 'avatars/iron-man.png', currentTask: null, logs: [] },
-        { id: 'coding-agent', name: 'Bill Gates', role: 'Coding Agent', status: 'idle', avatar: 'avatars/hulk.png', currentTask: null, logs: [] },
-      ];
-    } else {
-      data.agents = [];
-    }
+    data.agents = [
+      { id: 'research-agent', name: 'Elon Musk', role: 'Research Agent', status: 'idle', avatar: 'avatars/iron-man.png', currentTask: null, logs: [] },
+      { id: 'coding-agent', name: 'Bill Gates', role: 'Coding Agent', status: 'idle', avatar: 'avatars/hulk.png', currentTask: null, logs: [] },
+    ];
   }
 }
 

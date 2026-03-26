@@ -4,18 +4,19 @@
     "timezone": "Pacific/Auckland"
   },
   "backend": {
-    "port": 3001,
+    "port": 3002,
     "dataFile": "./data/data.json",
-    "adapter": "stub"
+    "adapter": "openclaw"
   },
   "adapter": {
     "openclaw": {
       "binPath": "/opt/homebrew/bin/openclaw",
-      "workspaceRoot": "/path/to/.openclaw",
-      "cronDir": "/path/to/.openclaw/cron",
+      "mcBase": "http://localhost:3002",
+      "workspaceRoot": "/Users/luckbot/.openclaw",
+      "cronDir": "/Users/luckbot/.openclaw/cron",
       "workspaces": [
-        { "name": "workspace", "path": "/path/to/.openclaw/workspace" },
-        { "name": "workspace-coding-agent", "path": "/path/to/.openclaw/workspace-coding-agent" }
+        { "name": "workspace", "path": "/Users/luckbot/.openclaw/workspace" },
+        { "name": "workspace-coding-agent", "path": "/Users/luckbot/.openclaw/workspace-coding-agent" }
       ],
       "agents": [
         { "id": "coding-agent", "model": "github-copilot/claude-sonnet-4.6" },
