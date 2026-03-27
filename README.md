@@ -2,7 +2,7 @@
 
 > **The command center for your AI agent team.** A self-hosted, real-time dashboard that lets you manage, monitor, and dispatch AI agents from a single beautiful interface.
 
-![Mission Control Office](docs/screenshots/office.jpg)
+![Mission Control Office](docs/screenshots/office.png)
 
 ---
 
@@ -27,7 +27,7 @@ Built on top of [OpenClaw](https://openclaw.ai), but designed to be extensible f
 
 ### 📅 Cron Jobs — Schedule & Monitor Automation
 
-![Cron Jobs](docs/screenshots/cron.jpg)
+![Cron Jobs](docs/screenshots/cron.png)
 
 See all your scheduled automation jobs at a glance. Each job shows its schedule, last status, run history, duration, tokens used, and a summary of what the agent did. Drill into individual runs to see exactly what happened.
 
@@ -35,7 +35,7 @@ See all your scheduled automation jobs at a glance. Each job shows its schedule,
 
 ### 🗂 Kanban Board — Assign Tasks to Agents
 
-![Kanban Board](docs/screenshots/kanban.jpg)
+![Kanban Board](docs/screenshots/kanban.png)
 
 Create task cards and assign them to any agent on your team. Hit **Run** to dispatch a task — the agent picks it up, executes it, and the card moves automatically from **To Do → Doing → Done**. Every execution logs its output directly on the card.
 
@@ -43,7 +43,7 @@ Create task cards and assign them to any agent on your team. Hit **Run** to disp
 
 ### 🤖 Team — Active Agent Status
 
-![Team](docs/screenshots/team.jpg)
+![Team](docs/screenshots/team.png)
 
 See every agent's current status (idle/running), their task history, and execution logs. Know exactly what each agent has done today, with timestamps and log counts.
 
@@ -51,7 +51,7 @@ See every agent's current status (idle/running), their task history, and executi
 
 ### 🏢 Office — Live Agent Visualisation
 
-![Office](docs/screenshots/office.jpg)
+![Office](docs/screenshots/office.png)
 
 A uniquely fun view: your AI team as an office floor plan. Each agent has their own desk, avatar, and live status indicator. When an agent is running a task, their desk lights up. The director (you) sits in the corner office upstairs.
 
@@ -59,7 +59,7 @@ A uniquely fun view: your AI team as an office floor plan. Each agent has their 
 
 ### 📋 Daily Digest — Everything That Happened Today
 
-![Daily Digest](docs/screenshots/digest.jpg)
+![Daily Digest](docs/screenshots/digest.png)
 
 A daily rollup showing every cron job that ran today, every agent task completed, and what each one did. Perfect for a morning review or end-of-day summary.
 
@@ -67,7 +67,7 @@ A daily rollup showing every cron job that ran today, every agent task completed
 
 ### ⚙️ Settings — Visual Config Editor
 
-![Settings](docs/screenshots/settings.jpg)
+![Settings](docs/screenshots/settings.png)
 
 Configure your entire setup through the UI. Add or remove agents, set their models and workspace paths, upload custom avatars, change the app name, timezone, and backend adapter — all without touching a config file.
 
