@@ -146,7 +146,37 @@ app.get('/api/cron/jobs/runs', (req, res) => {
 });
 
 // ── Agents ────────────────────────────────────────────
-app.get('/api/agents', (req, res) => res.json(load().agents || []));
+app.get('/api/agents', (req, res) => {
+  // Merge live agents from openclaw.json with status from data.json
+  const d = load();
+  const statusMap = {};
+  (d.agents || []).forEach(a => { statusMap[a.id] = a; });
+  // Read live agent list from openclaw.json
+  let liveAgents = [];
+  const ocPath = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
+  if (fs.existsSync(ocPath)) {
+    try {
+      const oc = JSON.parse(fs.readFileSync(ocPath, 'utf8'));
+      liveAgents = (oc.agents?.list || []).filter(a => a.id !== 'main').map(a => ({
+        id: a.id,
+        name: statusMap[a.id]?.name || a.id.replace(/-agent$/, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) + ' Agent',
+        role: statusMap[a.id]?.role || a.id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        status: statusMap[a.id]?.status || 'idle',
+        avatar: statusMap[a.id]?.avatar || 'avatars/iron-man.png',
+        currentTask: statusMap[a.id]?.currentTask || null,
+        logs: statusMap[a.id]?.logs || [],
+        model: (typeof a.model === 'object' ? a.model?.primary : a.model) || '',
+        workspace: a.workspace || ''
+      }));
+    } catch {}
+  }
+  // Fall back to data.json if openclaw.json not available
+  if (!liveAgents.length) liveAgents = d.agents || [];
+  // Sync back to data.json so status updates work
+  d.agents = liveAgents;
+  save(d);
+  res.json(liveAgents);
+});
 app.patch('/api/agents/:id', (req, res) => {
   const d = load();
   const agent = (d.agents || []).find(a => a.id === req.params.id);
@@ -271,15 +301,197 @@ app.get('/api/data', (req, res) => res.json(load()));
 
 // ── Config endpoint (frontend can fetch API base, title, etc.) ──
 app.get('/api/config', (req, res) => {
-  res.json({ title: config.app?.name || 'Mission Control', adapter: adapterName });
+  // Re-read config.json to get latest (including ownerName set via Settings)
+  try {
+    const latest = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    res.json({
+      title: latest.app?.name || 'Mission Control',
+      adapter: adapterName,
+      timezone: latest.app?.timezone || 'UTC',
+      ownerName: latest.app?.ownerName || ''
+    });
+  } catch {
+    res.json({ title: config.app?.name || 'Mission Control', adapter: adapterName, timezone: config.app?.timezone || 'UTC' });
+  }
 });
 
 // ── Config full API ───────────────────────────────────
 app.get('/api/config/full', (req, res) => {
   try {
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    // Read real agents and workspaces from OpenClaw config
+    const ocConfigPath = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
+    if (fs.existsSync(ocConfigPath)) {
+      try {
+        const oc = JSON.parse(fs.readFileSync(ocConfigPath, 'utf8'));
+        const agentDefaults = oc.agents?.defaults || {};
+        const agentList = (oc.agents?.list || []).filter(a => a.id !== 'main');
+        // Build agents array with real workspace paths
+        if (!cfg.adapter) cfg.adapter = {};
+        if (!cfg.adapter.openclaw) cfg.adapter.openclaw = {};
+        cfg.adapter.openclaw.agents = agentList.map(a => ({
+          id: a.id,
+          model: (typeof a.model === 'object' ? a.model?.primary : a.model) || agentDefaults.model?.primary || '',
+          workspace: a.workspace || agentDefaults.workspace || ''
+        }));
+        // Build workspaces from agents (use the mapped list which has workspace)
+        cfg.adapter.openclaw.workspaces = agentList
+          .filter(a => a.workspace)
+          .map(a => ({ name: a.id, path: a.workspace }));
+      } catch (e) { console.error('[config/full] OpenClaw config read error:', e.message); }
+    }
     res.json(cfg);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Agent Name & Avatar (writes to data.json) ─────────────────────────────
+const avatarsDir = path.join(__dirname, '..', 'frontend', 'avatars');
+
+// POST /api/agents/:id/avatar — upload avatar as base64
+app.post('/api/agents/:id/avatar', (req, res) => {
+  try {
+    const { base64, ext } = req.body; // ext: 'png' | 'jpg' etc
+    if (!base64) return res.status(400).json({ error: 'base64 required' });
+    const filename = `${req.params.id}.${ext || 'png'}`;
+    const filepath = path.join(avatarsDir, filename);
+    fs.writeFileSync(filepath, Buffer.from(base64, 'base64'));
+    // Update data.json
+    const d = load();
+    const agent = (d.agents || []).find(a => a.id === req.params.id);
+    if (agent) { agent.avatar = `avatars/${filename}`; save(d); }
+    res.json({ ok: true, avatar: `avatars/${filename}` });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/agents/:id/meta — update name/role in data.json
+app.patch('/api/agents/:id/meta', (req, res) => {
+  try {
+    const d = load();
+    let agent = (d.agents || []).find(a => a.id === req.params.id);
+    if (!agent) {
+      // Create entry if not exists
+      if (!d.agents) d.agents = [];
+      agent = { id: req.params.id, status: 'idle', currentTask: null, logs: [] };
+      d.agents.push(agent);
+    }
+    const { name, role, avatar } = req.body;
+    if (name !== undefined) agent.name = name;
+    if (role !== undefined) agent.role = role;
+    if (avatar !== undefined) agent.avatar = avatar;
+    save(d); res.json({ ok: true, agent });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── OpenClaw Agent CRUD (writes to ~/.openclaw/openclaw.json) ──────────────
+const ocConfigPath = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
+
+function loadOCConfig() {
+  return JSON.parse(fs.readFileSync(ocConfigPath, 'utf8'));
+}
+function saveOCConfig(oc) {
+  // Back up first
+  fs.writeFileSync(ocConfigPath + '.bak', fs.readFileSync(ocConfigPath));
+  fs.writeFileSync(ocConfigPath, JSON.stringify(oc, null, 2));
+}
+
+// POST /api/oc/agents — add new agent
+app.post('/api/oc/agents', (req, res) => {
+  try {
+    const { id, model, workspace } = req.body;
+    if (!id) return res.status(400).json({ error: 'id required' });
+    const oc = loadOCConfig();
+    if (!oc.agents) oc.agents = { defaults: {}, list: [] };
+    if (!oc.agents.list) oc.agents.list = [];
+    if (oc.agents.list.find(a => a.id === id)) return res.status(409).json({ error: `Agent "${id}" already exists` });
+    const entry = { id };
+    if (model) entry.model = { primary: model, fallbacks: [] };
+    if (workspace) entry.workspace = workspace;
+    oc.agents.list.push(entry);
+    saveOCConfig(oc);
+
+    // Auto-init git repo in workspace if it has no commits yet
+    if (workspace) {
+      // Auto-create directory if it doesn't exist yet
+      if (!fs.existsSync(workspace)) {
+        fs.mkdirSync(workspace, { recursive: true });
+        console.log(`[oc/agents] Created workspace directory: ${workspace}`);
+      }
+      const { execSync: execS } = require('child_process');
+      try {
+        execS(`/usr/bin/git -C "${workspace}" rev-parse HEAD`, { encoding: 'utf8', stdio: 'pipe' });
+        // Already has commits — skip
+      } catch {
+        try {
+          // No commits yet — init git and make initial commit
+          execS(`/usr/bin/git -C "${workspace}" init`, { encoding: 'utf8' });
+          execS(`/usr/bin/git -C "${workspace}" config user.email "agent@openclaw"`, { encoding: 'utf8' });
+          execS(`/usr/bin/git -C "${workspace}" config user.name "${id}"`, { encoding: 'utf8' });
+          execS(`/usr/bin/git -C "${workspace}" add -A`, { encoding: 'utf8' });
+          execS(`/usr/bin/git -C "${workspace}" commit -m "init: workspace initialized for ${id}"`, { encoding: 'utf8' });
+          console.log(`[oc/agents] Auto-initialized git repo for ${id} at ${workspace}`);
+        } catch(gitErr) {
+          console.warn(`[oc/agents] Git init skipped for ${id}: ${gitErr.message}`);
+        }
+      }
+    }
+
+    res.json({ ok: true, agent: entry });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/oc/agents/:id — update agent
+app.patch('/api/oc/agents/:id', (req, res) => {
+  try {
+    const oc = loadOCConfig();
+    const idx = (oc.agents?.list || []).findIndex(a => a.id === req.params.id);
+    if (idx < 0) return res.status(404).json({ error: 'Agent not found' });
+    const agent = oc.agents.list[idx];
+    const { id, model, workspace } = req.body;
+    if (id && id !== agent.id) agent.id = id;
+    if (model !== undefined) agent.model = { primary: model, fallbacks: agent.model?.fallbacks || [] };
+    if (workspace !== undefined) agent.workspace = workspace;
+    saveOCConfig(oc);
+
+    // Auto-init git repo if workspace was set and has no commits
+    const wsPath = workspace || agent.workspace;
+    if (wsPath) {
+      // Auto-create directory if it doesn't exist yet
+      if (!fs.existsSync(wsPath)) {
+        fs.mkdirSync(wsPath, { recursive: true });
+        console.log(`[oc/agents] Created workspace directory: ${wsPath}`);
+      }
+      const { execSync: execS } = require('child_process');
+      try {
+        execS(`/usr/bin/git -C "${wsPath}" rev-parse HEAD`, { encoding: 'utf8', stdio: 'pipe' });
+      } catch {
+        try {
+          const agentName = id || req.params.id;
+          execS(`/usr/bin/git -C "${wsPath}" init`, { encoding: 'utf8' });
+          execS(`/usr/bin/git -C "${wsPath}" config user.email "agent@openclaw"`, { encoding: 'utf8' });
+          execS(`/usr/bin/git -C "${wsPath}" config user.name "${agentName}"`, { encoding: 'utf8' });
+          execS(`/usr/bin/git -C "${wsPath}" add -A`, { encoding: 'utf8' });
+          execS(`/usr/bin/git -C "${wsPath}" commit -m "init: workspace initialized for ${agentName}"`, { encoding: 'utf8' });
+          console.log(`[oc/agents] Auto-initialized git repo at ${wsPath}`);
+        } catch(gitErr) {
+          console.warn(`[oc/agents] Git init skipped: ${gitErr.message}`);
+        }
+      }
+    }
+
+    res.json({ ok: true, agent });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/oc/agents/:id — remove agent
+app.delete('/api/oc/agents/:id', (req, res) => {
+  try {
+    const oc = loadOCConfig();
+    const before = (oc.agents?.list || []).length;
+    oc.agents.list = (oc.agents.list || []).filter(a => a.id !== req.params.id);
+    if (oc.agents.list.length === before) return res.status(404).json({ error: 'Agent not found' });
+    saveOCConfig(oc);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.patch('/api/config/full', (req, res) => {

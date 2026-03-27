@@ -10,11 +10,34 @@ class OpenClawAdapter {
   constructor(config) {
     this.cfg = config.adapter?.openclaw || {};
     this.cronDir = this.cfg.cronDir || path.join(process.env.HOME, '.openclaw', 'cron');
-    this.workspaces = this.cfg.workspaces || [];
     this.binPath = this.cfg.binPath || '/opt/homebrew/bin/openclaw';
-    this.mcBase = this.cfg.mcBase || 'http://localhost:3002'; // Mission Control base URL
+    this.mcBase = this.cfg.mcBase || 'http://localhost:3002';
     this.agentModels = {};
     (this.cfg.agents || []).forEach(a => { this.agentModels[a.id] = a.model; });
+    // Build workspaces from config + auto-discover from openclaw.json
+    this._initWorkspaces();
+  }
+
+  _initWorkspaces() {
+    const home = process.env.HOME;
+    const ocPath = path.join(home, '.openclaw', 'openclaw.json');
+    const wsSet = new Map();
+    // Always include main workspace
+    wsSet.set('workspace', { name: 'workspace', path: path.join(home, '.openclaw', 'workspace') });
+    // Load from openclaw.json agent workspaces
+    if (fs.existsSync(ocPath)) {
+      try {
+        const oc = JSON.parse(fs.readFileSync(ocPath, 'utf8'));
+        for (const a of (oc.agents?.list || [])) {
+          if (a.workspace) wsSet.set(a.id, { name: a.id, path: a.workspace });
+        }
+      } catch {}
+    }
+    // Also include any manually configured workspaces from config.json
+    for (const ws of (this.cfg.workspaces || [])) {
+      if (ws.path) wsSet.set(ws.name, { name: ws.name, path: ws.path });
+    }
+    this.workspaces = Array.from(wsSet.values());
   }
 
   // --- Cron jobs ---
@@ -72,11 +95,12 @@ class OpenClawAdapter {
     return new Promise(async (resolve) => {
       const agentType = card.agentType || 'research';
       // Map card agentType to real OpenClaw agent id
+      // Support both short names (coding, research) and full ids (coding-agent, test-agent)
       const agentId = (() => {
         if (agentType === 'coding') return 'coding-agent';
         if (agentType === 'research') return 'research-agent';
-        // Allow explicit agent ids (e.g. "coding-agent", "main")
-        return agentType.includes('-') ? agentType : `${agentType}-agent`;
+        // Already a full agent id
+        return agentType;
       })();
 
       const prompt = card.details ? `${card.title}\n\nDetails:\n${card.details}` : card.title;
@@ -225,9 +249,27 @@ class OpenClawAdapter {
 
   // --- Recent changes ---
   async getRecentChanges() {
+    // Re-discover workspaces each call (picks up newly added agents)
+    this._initWorkspaces();
     const results = [];
     for (const ws of this.workspaces) {
       try {
+        // Auto-init git repo if empty (no commits yet)
+        try {
+          execSync(`/usr/bin/git -C "${ws.path}" rev-parse HEAD`, { encoding: 'utf8', stdio: 'pipe' });
+        } catch {
+          // No commits — init and commit
+          try {
+            execSync(`/usr/bin/git -C "${ws.path}" init`, { encoding: 'utf8' });
+            execSync(`/usr/bin/git -C "${ws.path}" config user.email "agent@openclaw"`, { encoding: 'utf8' });
+            execSync(`/usr/bin/git -C "${ws.path}" config user.name "${ws.name}"`, { encoding: 'utf8' });
+            execSync(`/usr/bin/git -C "${ws.path}" add -A`, { encoding: 'utf8' });
+            execSync(`/usr/bin/git -C "${ws.path}" commit -m "init: workspace initialized for ${ws.name}"`, { encoding: 'utf8' });
+            console.log(`[recent-changes] Auto-initialized git repo for ${ws.name} at ${ws.path}`);
+          } catch (initErr) {
+            console.warn(`[recent-changes] Git init failed for ${ws.name}: ${initErr.message}`);
+          }
+        }
         const log = execSync(
           `/usr/bin/git -C "${ws.path}" log --since="24 hours ago" --pretty=format:"%H|||%s|||%ai" --name-only`,
           { encoding: 'utf8', timeout: 5000 }

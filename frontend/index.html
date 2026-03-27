@@ -403,6 +403,10 @@
           <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Timezone</label>
           <input id="cfg-app-tz" type="text" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
         </div>
+        <div style="flex:1;min-width:180px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Your Name <span style="font-weight:400">(shown in Office)</span></label>
+          <input id="cfg-owner-name" type="text" placeholder="e.g. James" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        </div>
       </div>
       <button class="btn-primary" onclick="saveAppSettings()">Save App Settings</button>
     </div>
@@ -418,8 +422,6 @@
           <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Adapter</label>
           <select id="cfg-backend-adapter" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
             <option value="openclaw">openclaw</option>
-            <option value="stub">stub</option>
-            <option value="rest">rest</option>
           </select>
         </div>
         <div style="flex:1;min-width:120px">
@@ -430,29 +432,16 @@
       <button class="btn-primary" onclick="saveBackendSettings()">Save Backend Settings</button>
     </div>
 
-    <!-- Section 3: Agents -->
+    <!-- Section 3: Agents + Workspaces (combined) -->
     <div class="card" style="margin-bottom:16px">
-      <h3 style="font-size:14px;font-weight:700;margin-bottom:14px">🤖 Agents</h3>
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:6px">🤖 Agents & Workspaces</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Each agent can be assigned a workspace path. Changes take effect after backend restart.</p>
       <table id="cfg-agents-table" style="margin-bottom:10px">
-        <thead><tr><th>Agent ID</th><th>Model</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Agent ID</th><th>Display Name</th><th>Model</th><th>Workspace</th><th>Avatar</th><th>Actions</th></tr></thead>
         <tbody id="cfg-agents-body"></tbody>
       </table>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button onclick="addAgentRow()">+ Add Agent</button>
-        <button class="btn-primary" onclick="saveAgentsSettings()">Save Agents</button>
-      </div>
-    </div>
-
-    <!-- Section 4: Workspaces -->
-    <div class="card" style="margin-bottom:16px">
-      <h3 style="font-size:14px;font-weight:700;margin-bottom:14px">📁 Workspaces <span style="font-size:11px;font-weight:400;color:var(--muted)">(openclaw adapter)</span></h3>
-      <table id="cfg-workspaces-table" style="margin-bottom:10px">
-        <thead><tr><th>Name</th><th>Path</th><th>Actions</th></tr></thead>
-        <tbody id="cfg-workspaces-body"></tbody>
-      </table>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button onclick="addWorkspaceRow()">+ Add Workspace</button>
-        <button class="btn-primary" onclick="saveWorkspacesSettings()">Save Workspaces</button>
       </div>
     </div>
   </div>
@@ -470,8 +459,8 @@
     <div id="card-edit-fields" style="display:none">
       <label>Agent Type</label>
       <select id="card-agent-type">
-        <option value="research">🔍 Research</option>
-        <option value="coding">💻 Coding</option>
+        <option value="research">🔍 Research Agent</option>
+        <option value="coding">💻 Coding Agent</option>
       </select>
       <label>Task Details / Prompt</label>
       <textarea id="card-details" placeholder="Describe exactly what the agent should do…"></textarea>
@@ -489,6 +478,11 @@
 <script>
 // API base can be overridden via: window.MC_API_BASE, meta tag, or defaults to same-origin
 const API = window.MC_API_BASE || (document.querySelector('meta[name="mc-api-base"]')?.content) || '';
+// Timezone loaded from config (default UTC until config loads)
+let MC_TZ = 'UTC';
+fetch(API + '/api/config').then(r => r.json()).then(cfg => {
+  if (cfg.timezone) MC_TZ = cfg.timezone;
+}).catch(() => {});
 let dragCard = null, dragFrom = null;
 
 // ── Navigation ──────────────────────────────────────
@@ -673,7 +667,9 @@ async function loadKanban() {
 
 function cardHTML(c, colId) {
   const running = c.agentStatus === 'running';
-  const agentIcon = c.agentType === 'coding' ? '💻' : '🔍';
+  const agentInfo = _agentsCache.find(a => a.id === c.agentType);
+  const agentIcon = c.agentType?.includes('coding') ? '💻' : c.agentType?.includes('research') ? '🔍' : '🤖';
+  const agentLabel = agentInfo?.name || c.agentType || 'research';
   const isDone = colId === 'done';
   const isDoing = colId === 'doing';
   const statusBadge = () => {
@@ -687,7 +683,7 @@ function cardHTML(c, colId) {
     ondragend="this.classList.remove('dragging')">
     <div class="kb-card-title">${esc(c.title)}</div>
     ${c.desc && c.desc !== c.title ? `<div class="kb-card-desc">${esc(c.desc)}</div>` : ''}
-    ${c.details ? `<div class="kb-card-desc" style="color:#0ea5ff">📋 Has details</div>` : ''}
+    ${c.details ? `<div class="kb-card-desc" style="color:var(--muted);font-size:11px;margin-top:4px;white-space:pre-wrap;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(c.details)}</div>` : ''}
     ${isDone && c.completedAt ? `<div class="kb-card-desc" style="color:#6b7280;font-size:11px">✔ Completed ${new Date(c.completedAt).toLocaleString('en-NZ',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>` : ''}
     <div class="kb-card-meta">
       <span style="font-size:11px;color:var(--muted)">${agentIcon} ${c.agentType || 'research'}</span>
@@ -806,12 +802,11 @@ function toggleTaskTable(tableId, btnId) {
 async function loadOffice() {
   const building = document.getElementById('office-building');
   try {
-    const agents = await fetch(API + '/api/agents').then(r => r.json());
-    const byId = {};
-    agents.forEach(a => { byId[a.id] = a; });
-
-    const elonAgent = byId['research-agent'] || { name: 'Elon Musk', status: 'idle', avatar: 'avatars/iron-man.png', currentTask: null };
-    const billAgent = byId['coding-agent']   || { name: 'Bill Gates', status: 'idle', avatar: 'avatars/hulk.png', currentTask: null };
+    const [agents, cfg] = await Promise.all([
+      fetch(API + '/api/agents').then(r => r.json()),
+      fetch(API + '/api/config/full').then(r => r.json())
+    ]);
+    const ownerName = cfg.app?.ownerName || 'Director';
 
     function monitorHtml(size) {
       return `<div class="monitor">
@@ -872,8 +867,8 @@ async function loadOffice() {
           <div class="status-dot online"></div>
         </div>
         <div class="person-info">
-          <div class="person-name">James</div>
-          <div class="person-title">Director · Boss</div>
+          <div class="person-name">${esc(ownerName)}</div>
+          <div class="person-title">Director</div>
           <div class="status-badge idle">● Online</div>
         </div>
         <div class="desk-furniture">
@@ -882,49 +877,24 @@ async function loadOffice() {
       </div>`;
 
     building.innerHTML = `
-      <!-- FLOOR 1: Boss -->
+      <!-- TOP FLOOR: Director -->
       <div class="floor-label boss" style="color:#c9a22766">◆ Executive Floor</div>
       <div class="office-room boss">
         <div class="corner-badge">Corner Office</div>
-        <div class="room-title boss">Floor 3 — Director</div>
+        <div class="room-title boss">Executive Floor — Director</div>
         ${jamesDesk}
       </div>
 
       <div class="floor-divider"></div>
 
-      <!-- FLOOR 2: Manager -->
-      <div class="floor-label" style="color:#1a6fff66">◆ Management Floor</div>
-      <div class="office-room manager">
-        <div class="room-title manager">Floor 2 — Manager</div>
-        <div class="desk-area manager">
-          <div class="avatar-wrap">
-            <div class="avatar-emoji" style="font-size:26px;width:56px;height:56px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #1a6fff;background:#111">👸</div>
-            <div class="status-dot online"></div>
-          </div>
-          <div class="person-info">
-            <div class="person-name">Kimberly</div>
-            <div class="person-title">Main Agent · Operations Manager</div>
-            <div class="status-badge idle">● Active</div>
-          </div>
-          <div class="desk-furniture">
-            ${monitorHtml('manager')}
-          </div>
-        </div>
-      </div>
-
-      <div class="floor-divider"></div>
-
-      <!-- FLOOR 3: Open floor employees -->
+      <!-- ENGINEERING FLOOR: All agents -->
       <div class="floor-label">◆ Engineering Floor</div>
       <div class="open-floor">
-        <div class="office-room employee ${elonAgent.status === 'running' ? 'active-glow' : ''}">
-          <div class="room-title">Desk — Research</div>
-          ${personDesk(elonAgent, 'employee', 'Research Agent · Analyst')}
-        </div>
-        <div class="office-room employee ${billAgent.status === 'running' ? 'active-glow' : ''}">
-          <div class="room-title">Desk — Engineering</div>
-          ${personDesk(billAgent, 'employee', 'Coding Agent · Engineer')}
-        </div>
+        ${agents.map(a => `
+        <div class="office-room employee ${a.status === 'running' ? 'active-glow' : ''}">
+          <div class="room-title">Desk — ${esc(a.id.replace(/-agent$/, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))}</div>
+          ${personDesk(a, 'employee', esc(a.id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())))}
+        </div>`).join('')}
       </div>
     `;
   } catch(e) {
@@ -936,9 +906,9 @@ async function loadOffice() {
 async function loadDigest() {
   const el = document.getElementById('digest-content');
   try {
-    const todayNZ = new Date().toLocaleDateString('en-CA', {timeZone:'Pacific/Auckland'});
+    const todayNZ = new Date().toLocaleDateString('en-CA', {timeZone:MC_TZ});
     const nzParts = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'Pacific/Auckland',
+  timeZone: MC_TZ,
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
 }).formatToParts(new Date());
 const elapsedMs = (parseInt(nzParts.find(p=>p.type==='hour').value)*3600 + parseInt(nzParts.find(p=>p.type==='minute').value)*60 + parseInt(nzParts.find(p=>p.type==='second').value))*1000;
@@ -965,7 +935,7 @@ const sinceToday = Date.now() - elapsedMs; // for cron history API
           if (m) completedUtc = m[0];
         }
         if (!completedUtc) return false;
-        const completedDateNZ = new Date(completedUtc).toLocaleDateString('en-CA', {timeZone:'Pacific/Auckland'});
+        const completedDateNZ = new Date(completedUtc).toLocaleDateString('en-CA', {timeZone:MC_TZ});
         return completedDateNZ === todayNZ;
       }).sort((a, b) => {
         const getTs = t => {
@@ -1085,7 +1055,7 @@ const sinceToday = Date.now() - elapsedMs; // for cron history API
                 <strong style="font-size:13px;display:block;margin-bottom:2px">${esc(c.message)}</strong>
                 <div style="font-size:11px;color:var(--muted)">${esc(c.workspace)} · ${esc(c.hash.substring(0,7))}</div>
               </div>
-              <span style="font-size:11px;color:var(--muted);white-space:nowrap">${esc(new Date(c.date).toLocaleString('en-NZ',{timeZone:'Pacific/Auckland',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}))}</span>
+              <span style="font-size:11px;color:var(--muted);white-space:nowrap">${esc(new Date(c.date).toLocaleString('en-NZ',{timeZone:MC_TZ,month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}))}</span>
             </div>
             <div style="font-size:11px;margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap">
               ${c.files.slice(0,3).map((f, fidx) => `<span class="file-chip" data-file-key="${idx}:${esc(f)}" onclick="event.stopPropagation();toggleFileDiff(${idx},'${esc(f)}')" title="Click to see changes">${esc(f)}</span>`).join('')}
@@ -1102,55 +1072,151 @@ const sinceToday = Date.now() - elapsedMs; // for cron history API
 // ── Settings ──────────────────────────────────────────
 async function loadSettings() {
   try {
-    const cfg = await fetch(API + '/api/config/full').then(r => r.json());
+    const [cfg, liveAgents] = await Promise.all([
+      fetch(API + '/api/config/full').then(r => r.json()),
+      fetch(API + '/api/agents').then(r => r.json())
+    ]);
 
     // App settings
     document.getElementById('cfg-app-name').value = cfg.app?.name || '';
     document.getElementById('cfg-app-tz').value = cfg.app?.timezone || '';
+    document.getElementById('cfg-owner-name').value = cfg.app?.ownerName || '';
 
     // Backend settings
     const adapterSel = document.getElementById('cfg-backend-adapter');
     adapterSel.value = cfg.backend?.adapter || 'stub';
     document.getElementById('cfg-backend-port').value = cfg.backend?.port || 3001;
 
-    // Agents
-    const agents = cfg.adapter?.openclaw?.agents || [];
-    renderAgentsTable(agents);
-
-    // Workspaces
-    const workspaces = cfg.adapter?.openclaw?.workspaces || [];
-    renderWorkspacesTable(workspaces);
+    // Agents + Workspaces merged — use liveAgents for name/avatar, cfg for model/workspace
+    const cfgAgents = cfg.adapter?.openclaw?.agents || [];
+    // Build a map of cfg data by id
+    const cfgMap = {};
+    cfgAgents.forEach(a => { cfgMap[a.id] = a; });
+    // Merge: liveAgents has name/avatar/status, cfgAgents has model/workspace
+    const merged = liveAgents.map(a => ({
+      ...a,
+      model: cfgMap[a.id]?.model || a.model || '',
+      workspace: cfgMap[a.id]?.workspace || a.workspace || ''
+    }));
+    renderAgentsTable(merged, {});
   } catch(e) { toast('Failed to load settings: ' + e.message); }
 }
-
-function renderAgentsTable(agents) {
+function renderAgentsTable(agents, wsMap) {
+  wsMap = wsMap || {};
   const tbody = document.getElementById('cfg-agents-body');
   tbody.innerHTML = agents.map((a, i) => `
-    <tr data-idx="${i}">
+    <tr data-id="${esc(a.id||'')}" data-original-id="${esc(a.id||'')}">
       <td><input type="text" value="${esc(a.id||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-id-input"></td>
+      <td><input type="text" value="${esc(a.name||'')}" placeholder="Display name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-name-input"></td>
       <td><input type="text" value="${esc(a.model||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-model-input"></td>
-      <td><button class="btn-danger" onclick="this.closest('tr').remove()">Delete</button></td>
+      <td><input type="text" value="${esc(a.workspace || wsMap[a.id] || wsMap[a.id?.replace('-agent','')] || '')}" placeholder="/path/to/workspace" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-ws-input"></td>
+      <td style="text-align:center">
+        <img src="${esc(a.avatar||'avatars/iron-man.png')}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 4px;cursor:pointer" 
+             onclick="triggerAvatarUpload('${esc(a.id||'')}', this)" title="Click to upload avatar">
+        <input type="file" accept="image/*" style="display:none" onchange="uploadAvatar('${esc(a.id||'')}', this)">
+      </td>
+      <td style="white-space:nowrap">
+        <button onclick="saveAgentRow(this)" style="margin-right:4px">Save</button>
+        <button class="btn-danger" onclick="deleteAgentRow(this, '${esc(a.id||'')}')">Delete</button>
+      </td>
     </tr>`).join('');
+}
+
+async function saveAgentRow(btn) {
+  const tr = btn.closest('tr');
+  const originalId = tr.dataset.originalId;
+  const id = tr.querySelector('.agent-id-input').value.trim();
+  const name = tr.querySelector('.agent-name-input')?.value.trim();
+  const model = tr.querySelector('.agent-model-input').value.trim();
+  const workspace = tr.querySelector('.agent-ws-input').value.trim();
+  if (!id) { toast('❌ Agent ID required'); return; }
+  try {
+    let r;
+    if (originalId) {
+      // Update existing agent in openclaw.json
+      r = await fetch(`${API}/api/oc/agents/${encodeURIComponent(originalId)}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ id, model, workspace })
+      }).then(r => r.json());
+    } else {
+      // New agent in openclaw.json
+      r = await fetch(`${API}/api/oc/agents`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ id, model, workspace })
+      }).then(r => r.json());
+    }
+    if (!r.ok) { toast('❌ ' + (r.error || 'Save failed')); return; }
+    // Save name/display meta to data.json
+    if (name) {
+      await fetch(`${API}/api/agents/${encodeURIComponent(id)}/meta`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name })
+      });
+    }
+    tr.dataset.originalId = id;
+    tr.dataset.id = id;
+    tr.querySelectorAll('button')[1].setAttribute('onclick', `deleteAgentRow(this, '${id}')`);
+    toast(`✅ Agent "${id}" saved`);
+  } catch(e) { toast('❌ ' + e.message); }
+}
+
+async function deleteAgentRow(btn, agentId) {
+  if (!agentId) { btn.closest('tr').remove(); return; }
+  if (!confirm(`Delete agent "${agentId}" from OpenClaw config?`)) return;
+  try {
+    const r = await fetch(`${API}/api/oc/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' }).then(r => r.json());
+    if (r.ok) { btn.closest('tr').remove(); toast(`✅ Agent "${agentId}" deleted`); }
+    else { toast('❌ ' + (r.error || 'Delete failed')); }
+  } catch(e) { toast('❌ ' + e.message); }
 }
 
 function renderWorkspacesTable(workspaces) {
-  const tbody = document.getElementById('cfg-workspaces-body');
-  tbody.innerHTML = Object.entries(workspaces).map(([name, wpath]) => `
-    <tr>
-      <td><input type="text" value="${esc(name)}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="ws-name-input"></td>
-      <td><input type="text" value="${esc(wpath||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="ws-path-input"></td>
-      <td><button class="btn-danger" onclick="this.closest('tr').remove()">Delete</button></td>
-    </tr>`).join('');
+  // No longer used — workspaces shown inline in agents table
+}
+
+function triggerAvatarUpload(agentId, imgEl) {
+  const input = imgEl.nextElementSibling;
+  input.onchange = (e) => uploadAvatar(agentId, e.target, imgEl);
+  input.click();
+}
+
+async function uploadAvatar(agentId, input, imgEl) {
+  const file = input.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = e.target.result.split(',')[1];
+    try {
+      const r = await fetch(`${API}/api/agents/${encodeURIComponent(agentId)}/avatar`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ base64, ext })
+      }).then(r => r.json());
+      if (r.ok) {
+        if (imgEl) imgEl.src = r.avatar + '?t=' + Date.now();
+        toast(`✅ Avatar updated`);
+      } else { toast('❌ ' + (r.error || 'Upload failed')); }
+    } catch(ex) { toast('❌ ' + ex.message); }
+  };
+  reader.readAsDataURL(file);
 }
 
 function addAgentRow() {
   const tbody = document.getElementById('cfg-agents-body');
   const tr = document.createElement('tr');
+  tr.dataset.originalId = '';
   tr.innerHTML = `
     <td><input type="text" placeholder="agent-id" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-id-input"></td>
-    <td><input type="text" placeholder="model-name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-model-input"></td>
-    <td><button class="btn-danger" onclick="this.closest('tr').remove()">Delete</button></td>`;
+    <td><input type="text" placeholder="Display Name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-name-input"></td>
+    <td><input type="text" placeholder="github-copilot/claude-sonnet-4.6" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-model-input"></td>
+    <td><input type="text" placeholder="/Users/luckbot/.openclaw/workspace-..." style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-ws-input"></td>
+    <td style="text-align:center;color:var(--muted);font-size:11px">Save first</td>
+    <td style="white-space:nowrap">
+      <button onclick="saveAgentRow(this)" style="margin-right:4px">Save</button>
+      <button class="btn-danger" onclick="this.closest('tr').remove()">Cancel</button>
+    </td>`;
   tbody.appendChild(tr);
+  tr.querySelector('.agent-id-input').focus();
 }
 
 function addWorkspaceRow() {
@@ -1166,9 +1232,18 @@ function addWorkspaceRow() {
 async function saveAppSettings() {
   const name = document.getElementById('cfg-app-name').value.trim();
   const timezone = document.getElementById('cfg-app-tz').value.trim();
+  const ownerName = document.getElementById('cfg-owner-name').value.trim();
   try {
-    const r = await fetch(API + '/api/config/full', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ app: { name, timezone } }) }).then(r => r.json());
-    if (r.ok) toast('✅ App settings saved'); else toast('❌ ' + (r.error || 'Save failed'));
+    const r = await fetch(API + '/api/config/full', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ app: { name, timezone, ownerName } }) }).then(r => r.json());
+    if (r.ok) {
+      // Update page title and sidebar live
+      if (name) {
+        document.title = name + ' — OpenClaw';
+        const sidebarH1 = document.querySelector('#sidebar h1');
+        if (sidebarH1) sidebarH1.innerHTML = '🛰 <span>' + name + '</span>';
+      }
+      toast('✅ App settings saved');
+    } else { toast('❌ ' + (r.error || 'Save failed')); }
   } catch(e) { toast('❌ ' + e.message); }
 }
 
@@ -1184,24 +1259,29 @@ async function saveBackendSettings() {
 async function saveAgentsSettings() {
   const rows = document.querySelectorAll('#cfg-agents-body tr');
   const agents = [];
+  const workspaces = [];
   rows.forEach(row => {
     const id = row.querySelector('.agent-id-input')?.value.trim();
     const model = row.querySelector('.agent-model-input')?.value.trim();
-    if (id) agents.push({ id, model });
+    const wsPath = row.querySelector('.agent-ws-input')?.value.trim();
+    if (id) {
+      agents.push({ id, model: model || '' });
+      if (wsPath) workspaces.push({ name: id, path: wsPath });
+    }
   });
   try {
-    const r = await fetch(API + '/api/config/full', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adapter: { openclaw: { agents } } }) }).then(r => r.json());
-    if (r.ok) toast('✅ Agents saved'); else toast('❌ ' + (r.error || 'Save failed'));
+    const r = await fetch(API + '/api/config/full', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adapter: { openclaw: { agents, workspaces } } }) }).then(r => r.json());
+    if (r.ok) toast('✅ Agents & Workspaces saved'); else toast('❌ ' + (r.error || 'Save failed'));
   } catch(e) { toast('❌ ' + e.message); }
 }
 
 async function saveWorkspacesSettings() {
   const rows = document.querySelectorAll('#cfg-workspaces-body tr');
-  const workspaces = {};
+  const workspaces = [];
   rows.forEach(row => {
     const name = row.querySelector('.ws-name-input')?.value.trim();
-    const wpath = row.querySelector('.ws-path-input')?.value.trim();
-    if (name) workspaces[name] = wpath || '';
+    const path = row.querySelector('.ws-path-input')?.value.trim();
+    if (name) workspaces.push({ name, path: path || '' });
   });
   try {
     const r = await fetch(API + '/api/config/full', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adapter: { openclaw: { workspaces } } }) }).then(r => r.json());
@@ -1260,7 +1340,7 @@ function editCard(id, title) {
     document.getElementById('modal-body-wrap').style.display = 'none';
     document.getElementById('card-edit-fields').style.display = 'block';
     document.getElementById('modal-save-btn').style.display = 'inline-block';
-    document.getElementById('card-agent-type').value = card?.agentType || 'research';
+    document.getElementById('card-agent-type').value = card?.agentType || _agentsCache[0]?.id || 'research-agent';
     document.getElementById('card-details').value = card?.details || '';
     document.getElementById('modal').classList.add('open');
   });
@@ -1451,7 +1531,18 @@ function esc(s) {
 }
 
 // ── Init ──────────────────────────────────────────────
+let _agentsCache = [];
 loadCrons();
+// Populate agent type dropdown from live agent list
+fetch(`${API}/api/agents`).then(r => r.json()).then(agents => {
+  _agentsCache = agents;
+  const sel = document.getElementById('card-agent-type');
+  if (!sel || !agents.length) return;
+  sel.innerHTML = agents.map(a => {
+    const icon = a.id.includes('coding') ? '💻' : a.id.includes('research') ? '🔍' : '🤖';
+    return `<option value="${esc(a.id)}">${icon} ${esc(a.name || a.id)}</option>`;
+  }).join('');
+}).catch(() => {});
 // Resume polling for any cards already running
 fetch(`${API}/api/kanban`).then(r => r.json()).then(data => {
   for (const col of data.columns)
