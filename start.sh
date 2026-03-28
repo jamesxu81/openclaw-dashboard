@@ -1,4 +1,4 @@
 #!/bin/bash
-cd /Users/luckbot/.openclaw/workspace-coding-agent/mission-control-board
-/opt/homebrew/bin/node backend/sync.js
-exec /opt/homebrew/bin/node backend/index.js
+cd "$(dirname "$0")"
+node backend/sync.js
+exec node backend/index.js
