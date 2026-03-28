@@ -759,11 +759,11 @@ async function loadAgents() {
               </tr>`;
           }).join('');
       return `
-        <div class="card" style="margin-bottom:16px">
+        <div class="card" style="margin-bottom:16px${a.isDefault ? ';border:2px solid #c9a227;background:linear-gradient(135deg,#1a150033,transparent)' : ''}">
           <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
             <div style="font-size:28px">${a.avatar && (a.avatar.startsWith('http') || a.avatar.startsWith('avatar')) ? `<img src="${a.avatar}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;display:block" />` : (a.avatar || '🤖')}</div>
             <div style="flex:1">
-              <div style="font-weight:700">${esc(a.name)}</div>
+              <div style="font-weight:700">${esc(a.name)}${a.isDefault ? ' <span style="font-size:11px;background:#c9a227;color:#000;border-radius:4px;padding:1px 6px;font-weight:600;margin-left:6px">👑 Team Lead</span>' : ''}</div>
               <div style="font-size:12px;color:var(--muted)">${esc(a.role || 'general')} · ${badge(a.status)}</div>
               ${a.currentTask ? `<div style="font-size:12px;margin-top:4px">Current: <strong>${esc(a.currentTask)}</strong></div>` : ''}
             </div>
@@ -877,7 +877,7 @@ async function loadOffice() {
       </div>`;
 
     building.innerHTML = `
-      <!-- TOP FLOOR: Director -->
+      <!-- TOP FLOOR: Director (owner) -->
       <div class="floor-label boss" style="color:#c9a22766">◆ Executive Floor</div>
       <div class="office-room boss">
         <div class="corner-badge">Corner Office</div>
@@ -887,10 +887,23 @@ async function loadOffice() {
 
       <div class="floor-divider"></div>
 
-      <!-- ENGINEERING FLOOR: All agents -->
+      <!-- MANAGEMENT FLOOR: Main agent (Team Lead) -->
+      ${(() => {
+        const main = agents.find(a => a.isDefault || a.id === 'main');
+        if (!main) return '';
+        return `
+        <div class="floor-label" style="color:#1a6fffaa">◆ Management Floor</div>
+        <div class="office-room manager ${main.status === 'running' ? 'active-glow' : ''}">
+          <div class="room-title" style="color:#1a6fff99">Management Floor — Team Lead</div>
+          ${personDesk(main, 'manager', 'Team Lead')}
+        </div>
+        <div class="floor-divider"></div>`;
+      })()}
+
+      <!-- ENGINEERING FLOOR: All non-default agents -->
       <div class="floor-label">◆ Engineering Floor</div>
       <div class="open-floor">
-        ${agents.map(a => `
+        ${agents.filter(a => !a.isDefault && a.id !== 'main').map(a => `
         <div class="office-room employee ${a.status === 'running' ? 'active-glow' : ''}">
           <div class="room-title">Desk — ${esc(a.id.replace(/-agent$/, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))}</div>
           ${personDesk(a, 'employee', esc(a.id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())))}
@@ -1616,8 +1629,9 @@ fetch(`${API}/api/agents`).then(r => r.json()).then(agents => {
   const sel = document.getElementById('card-agent-type');
   if (!sel || !agents.length) return;
   sel.innerHTML = agents.map(a => {
-    const icon = a.id.includes('coding') ? '💻' : a.id.includes('research') ? '🔍' : '🤖';
-    return `<option value="${esc(a.id)}">${icon} ${esc(a.name || a.id)}</option>`;
+    const icon = a.isDefault ? '👑' : a.id.includes('coding') ? '💻' : a.id.includes('research') ? '🔍' : '🤖';
+    const label = a.isDefault ? `${esc(a.name)} (Team Lead)` : esc(a.name || a.id);
+    return `<option value="${esc(a.id)}">${icon} ${label}</option>`;
   }).join('');
 }).catch(() => {});
 // Resume polling for any cards already running

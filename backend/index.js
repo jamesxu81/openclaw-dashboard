@@ -201,7 +201,23 @@ app.get('/api/agents', (req, res) => {
   if (fs.existsSync(ocPath)) {
     try {
       const oc = JSON.parse(fs.readFileSync(ocPath, 'utf8'));
-      liveAgents = (oc.agents?.list || []).filter(a => a.id !== 'main').map(a => ({
+      const defaults = oc.agents?.defaults || {};
+      const ownerName = (() => { try { return JSON.parse(fs.readFileSync(configPath, 'utf8')).app?.ownerName || 'Main Agent'; } catch { return 'Main Agent'; } })();
+      // Prepend main/default agent as first entry
+      const mainEntry = {
+        id: 'main',
+        name: statusMap['main']?.name || ownerName,
+        role: 'Team Lead',
+        status: statusMap['main']?.status || 'idle',
+        avatar: statusMap['main']?.avatar || 'avatars/iron-man.png',
+        currentTask: statusMap['main']?.currentTask || null,
+        logs: statusMap['main']?.logs || [],
+        model: (typeof defaults.model === 'object' ? defaults.model?.primary : defaults.model) || '',
+        workspace: defaults.workspace || '',
+        thinkingDefault: defaults.thinkingDefault || '',
+        isDefault: true
+      };
+      liveAgents = [mainEntry, ...(oc.agents?.list || []).filter(a => a.id !== 'main').map(a => ({
         id: a.id,
         name: statusMap[a.id]?.name || a.id.replace(/-agent$/, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) + ' Agent',
         role: statusMap[a.id]?.role || a.id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
@@ -211,8 +227,9 @@ app.get('/api/agents', (req, res) => {
         logs: statusMap[a.id]?.logs || [],
         model: (typeof a.model === 'object' ? a.model?.primary : a.model) || '',
         workspace: a.workspace || '',
-        thinkingDefault: a.thinkingDefault || ''
-      }));
+        thinkingDefault: a.thinkingDefault || '',
+        isDefault: false
+      }))];
     } catch {}
   }
   // Fall back to data.json if openclaw.json not available
