@@ -456,7 +456,7 @@
       <h3 style="font-size:14px;font-weight:700;margin-bottom:6px">🤖 Agents & Workspaces</h3>
       <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Each agent can be assigned a workspace path. Changes take effect after backend restart.</p>
       <table id="cfg-agents-table" style="margin-bottom:10px">
-        <thead><tr><th>Agent ID</th><th>Display Name</th><th>Model</th><th>Workspace</th><th>Avatar</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Agent ID</th><th>Display Name</th><th>Model</th><th>Thinking</th><th>Workspace</th><th>Avatar</th><th>Actions</th></tr></thead>
         <tbody id="cfg-agents-body"></tbody>
       </table>
       <div style="display:flex;gap:8px;margin-top:8px">
@@ -1123,7 +1123,8 @@ async function loadSettings() {
     const merged = liveAgents.map(a => ({
       ...a,
       model: cfgMap[a.id]?.model || a.model || '',
-      workspace: cfgMap[a.id]?.workspace || a.workspace || ''
+      workspace: cfgMap[a.id]?.workspace || a.workspace || '',
+      thinkingDefault: cfgMap[a.id]?.thinkingDefault || a.thinkingDefault || ''
     }));
     renderAgentsTable(merged, {});
   } catch(e) { toast('Failed to load settings: ' + e.message); }
@@ -1153,6 +1154,24 @@ function buildModelDropdown(currentValue) {
     ${groupHtml}
   </select>`;
 }
+function buildThinkingDropdown(currentValue) {
+  const options = [
+    { value: 'adaptive', label: 'adaptive — model decides' },
+    { value: 'off',      label: 'off — no thinking' },
+    { value: 'minimal',  label: 'minimal' },
+    { value: 'low',      label: 'low' },
+    { value: 'medium',   label: 'medium' },
+    { value: 'high',     label: 'high' },
+    { value: 'xhigh',    label: 'xhigh — maximum' },
+  ];
+  const opts = options.map(o =>
+    `<option value="${o.value}" ${o.value === currentValue ? 'selected' : ''}>${o.label}</option>`
+  ).join('');
+  return `<select style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-thinking-input">
+    <option value="">— inherit default —</option>
+    ${opts}
+  </select>`;
+}
 function renderAgentsTable(agents, wsMap) {
   wsMap = wsMap || {};
   const tbody = document.getElementById('cfg-agents-body');
@@ -1161,6 +1180,7 @@ function renderAgentsTable(agents, wsMap) {
       <td><input type="text" value="${esc(a.id||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-id-input"></td>
       <td><input type="text" value="${esc(a.name||'')}" placeholder="Display name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-name-input"></td>
       <td>${buildModelDropdown(a.model||'')}</td>
+      <td>${buildThinkingDropdown(a.thinkingDefault||'')}</td>
       <td><input type="text" value="${esc(a.workspace || wsMap[a.id] || wsMap[a.id?.replace('-agent','')] || '')}" placeholder="/path/to/workspace" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-ws-input"></td>
       <td style="text-align:center">
         <img src="${esc(a.avatar||'avatars/iron-man.png')}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 4px;cursor:pointer" 
@@ -1181,20 +1201,19 @@ async function saveAgentRow(btn) {
   const name = tr.querySelector('.agent-name-input')?.value.trim();
   const model = tr.querySelector('.agent-model-input').value.trim();
   const workspace = tr.querySelector('.agent-ws-input').value.trim();
+  const thinkingDefault = tr.querySelector('.agent-thinking-input').value.trim();
   if (!id) { toast('❌ Agent ID required'); return; }
   try {
     let r;
     if (originalId) {
-      // Update existing agent in openclaw.json
       r = await fetch(`${API}/api/oc/agents/${encodeURIComponent(originalId)}`, {
         method: 'PATCH', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ id, model, workspace })
+        body: JSON.stringify({ id, model, workspace, thinkingDefault })
       }).then(r => r.json());
     } else {
-      // New agent in openclaw.json
       r = await fetch(`${API}/api/oc/agents`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ id, model, workspace })
+        body: JSON.stringify({ id, model, workspace, thinkingDefault })
       }).then(r => r.json());
     }
     if (!r.ok) { toast('❌ ' + (r.error || 'Save failed')); return; }
@@ -1261,6 +1280,7 @@ function addAgentRow() {
     <td><input type="text" placeholder="agent-id" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-id-input"></td>
     <td><input type="text" placeholder="Display Name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-name-input"></td>
     <td>${buildModelDropdown('')}</td>
+    <td>${buildThinkingDropdown('')}</td>
     <td><input type="text" placeholder="/path/to/workspace" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-ws-input"></td>
     <td style="text-align:center;color:var(--muted);font-size:11px">Save first</td>
     <td style="white-space:nowrap">

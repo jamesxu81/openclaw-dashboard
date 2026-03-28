@@ -185,7 +185,8 @@ app.get('/api/agents', (req, res) => {
         currentTask: statusMap[a.id]?.currentTask || null,
         logs: statusMap[a.id]?.logs || [],
         model: (typeof a.model === 'object' ? a.model?.primary : a.model) || '',
-        workspace: a.workspace || ''
+        workspace: a.workspace || '',
+        thinkingDefault: a.thinkingDefault || ''
       }));
     } catch {}
   }
@@ -414,7 +415,8 @@ app.get('/api/config/full', (req, res) => {
         cfg.adapter.openclaw.agents = agentList.map(a => ({
           id: a.id,
           model: (typeof a.model === 'object' ? a.model?.primary : a.model) || agentDefaults.model?.primary || '',
-          workspace: a.workspace || agentDefaults.workspace || ''
+          workspace: a.workspace || agentDefaults.workspace || '',
+          thinkingDefault: a.thinkingDefault || agentDefaults.thinkingDefault || ''
         }));
         // Build workspaces from agents (use the mapped list which has workspace)
         cfg.adapter.openclaw.workspaces = agentList
@@ -479,7 +481,7 @@ function saveOCConfig(oc) {
 // POST /api/oc/agents — add new agent
 app.post('/api/oc/agents', (req, res) => {
   try {
-    const { id, model, workspace } = req.body;
+    const { id, model, workspace, thinkingDefault } = req.body;
     if (!id) return res.status(400).json({ error: 'id required' });
     const oc = loadOCConfig();
     if (!oc.agents) oc.agents = { defaults: {}, list: [] };
@@ -488,6 +490,7 @@ app.post('/api/oc/agents', (req, res) => {
     const entry = { id };
     if (model) entry.model = { primary: model, fallbacks: [] };
     if (workspace) entry.workspace = workspace;
+    if (thinkingDefault) entry.thinkingDefault = thinkingDefault;
     oc.agents.list.push(entry);
     saveOCConfig(oc);
 
@@ -528,10 +531,11 @@ app.patch('/api/oc/agents/:id', (req, res) => {
     const idx = (oc.agents?.list || []).findIndex(a => a.id === req.params.id);
     if (idx < 0) return res.status(404).json({ error: 'Agent not found' });
     const agent = oc.agents.list[idx];
-    const { id, model, workspace } = req.body;
+    const { id, model, workspace, thinkingDefault } = req.body;
     if (id && id !== agent.id) agent.id = id;
     if (model !== undefined) agent.model = { primary: model, fallbacks: agent.model?.fallbacks || [] };
     if (workspace !== undefined) agent.workspace = workspace;
+    if (thinkingDefault !== undefined) agent.thinkingDefault = thinkingDefault || undefined;
     saveOCConfig(oc);
 
     // Auto-init git repo if workspace was set and has no commits
