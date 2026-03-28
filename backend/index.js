@@ -145,6 +145,24 @@ app.get('/api/cron/jobs/runs', (req, res) => {
   res.redirect('/api/cron-history?' + new URLSearchParams(req.query).toString());
 });
 
+// ── Default Agent ─────────────────────────────────────
+app.get('/api/default-agent', (req, res) => {
+  try {
+    const ocPath = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(ocPath)) return res.json({ id: null, model: null, workspace: null });
+    const oc = JSON.parse(fs.readFileSync(ocPath, 'utf8'));
+    const mainAgent = (oc.agents?.list || []).find(a => a.id === 'main');
+    const defaults = oc.agents?.defaults || {};
+    res.json({
+      id: mainAgent?.id || 'main',
+      model: (typeof mainAgent?.model === 'object' ? mainAgent?.model?.primary : mainAgent?.model) || (typeof defaults.model === 'object' ? defaults.model?.primary : defaults.model) || null,
+      workspace: mainAgent?.workspace || defaults.workspace || null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Agents ────────────────────────────────────────────
 app.get('/api/agents', (req, res) => {
   // Merge live agents from openclaw.json with status from data.json
@@ -295,6 +313,56 @@ app.patch('/api/settings/:tool', (req, res) => {
 
 // ── Office ────────────────────────────────────────────
 app.get('/api/office', (req, res) => res.json(load().office || { grid: [] }));
+
+// ── Workspaces list (for dropdown population) ─────────────────────────────
+app.get('/api/workspaces', (req, res) => {
+  try {
+    const ocConfigPath = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
+    const workspaceRoot = config.adapter?.openclaw?.workspaceRoot || path.join(process.env.HOME, '.openclaw');
+    const results = [];
+
+    // 1. Scan workspaceRoot directory for workspace-* folders
+    if (fs.existsSync(workspaceRoot)) {
+      const entries = fs.readdirSync(workspaceRoot, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.startsWith('workspace')) {
+          const fullPath = path.join(workspaceRoot, entry.name);
+          results.push({ name: entry.name, path: fullPath });
+        }
+      }
+    }
+
+    // 2. Augment with workspaces from openclaw.json agents list (in case any are outside workspaceRoot)
+    if (fs.existsSync(ocConfigPath)) {
+      try {
+        const oc = JSON.parse(fs.readFileSync(ocConfigPath, 'utf8'));
+        const agentList = oc.agents?.list || [];
+        const agentDefaults = oc.agents?.defaults || {};
+        const defaultWs = agentDefaults.workspace;
+        if (defaultWs && !results.find(r => r.path === defaultWs)) {
+          results.push({ name: 'workspace (default)', path: defaultWs });
+        }
+        for (const a of agentList) {
+          if (a.workspace && !results.find(r => r.path === a.workspace)) {
+            results.push({ name: a.id + ' workspace', path: a.workspace });
+          }
+        }
+      } catch (e) { /* ignore parse errors */ }
+    }
+
+    // Deduplicate and sort
+    const seen = new Set();
+    const unique = results.filter(r => {
+      if (seen.has(r.path)) return false;
+      seen.add(r.path);
+      return true;
+    }).sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json(unique);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ── Full data ──────────────────────────────────────────
 app.get('/api/data', (req, res) => res.json(load()));
