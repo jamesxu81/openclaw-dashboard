@@ -1117,14 +1117,15 @@ async function loadSettings() {
         workspace: cfgMap[a.id]?.workspace || a.workspace || '',
         thinkingDefault: cfgMap[a.id]?.thinkingDefault || a.thinkingDefault || ''
       }));
-    // Prepend default agent row
+    // Prepend default agent row — get name from live agents list (stored in data.json)
+    const mainLive = liveAgents.find(a => a.id === 'main');
     const defaultRow = {
       id: 'main',
-      name: 'Main Agent',
+      name: mainLive?.name || 'Main Agent',
       model: defaultAgent.model || '',
       workspace: defaultAgent.workspace || '',
       thinkingDefault: defaultAgent.thinkingDefault || '',
-      avatar: 'avatars/iron-man.png',
+      avatar: mainLive?.avatar || 'avatars/iron-man.png',
       _isDefault: true
     };
     renderAgentsTable([defaultRow, ...merged], {});
@@ -1183,7 +1184,7 @@ function renderAgentsTable(agents, wsMap) {
       ? `<input type="text" value="main" disabled style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--bg2,#f1f3f5);color:var(--muted);cursor:not-allowed" class="agent-id-input">`
       : `<input type="text" value="${esc(a.id||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-id-input">`;
     const nameInput = isDefault
-      ? `<span style="font-size:12px;font-weight:600;color:var(--text)">Main Agent <span style="font-size:10px;color:var(--muted);font-weight:400">(default)</span></span><input type="hidden" value="Main Agent" class="agent-name-input">`
+      ? `<input type="text" value="${esc(a.name||'Main Agent')}" placeholder="Display name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-name-input">`
       : `<input type="text" value="${esc(a.name||'')}" placeholder="Display name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-name-input">`;
     return `
     <tr data-id="${esc(a.id||'')}" data-original-id="${esc(a.id||'')}" style="${rowStyle}">
@@ -1234,9 +1235,9 @@ async function saveAgentRow(btn) {
       }).then(r => r.json());
     }
     if (!r.ok) { toast('❌ ' + (r.error || 'Save failed')); return; }
-    // Save name/display meta to data.json (skip for main)
-    if (name && originalId !== 'main') {
-      await fetch(`${API}/api/agents/${encodeURIComponent(id)}/meta`, {
+    // Save name/display meta to data.json
+    if (name) {
+      await fetch(`${API}/api/agents/${encodeURIComponent(originalId === 'main' ? 'main' : id)}/meta`, {
         method: 'PATCH', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ name })
       });
