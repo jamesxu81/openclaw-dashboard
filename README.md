@@ -4,6 +4,8 @@
 
 ![Mission Control Office](docs/screenshots/office.png)
 
+🎥 Demo video: https://www.youtube.com/watch?v=K3SStxCWg6c
+
 ---
 
 ## ✨ Why Mission Control Board?
