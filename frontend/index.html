@@ -405,7 +405,7 @@
         </div>
         <div style="flex:1;min-width:180px">
           <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Your Name <span style="font-weight:400">(shown in Office)</span></label>
-          <input id="cfg-owner-name" type="text" placeholder="e.g. James" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+          <input id="cfg-owner-name" type="text" placeholder="e.g. Alice" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
         </div>
       </div>
       <button class="btn-primary" onclick="saveAppSettings()">Save App Settings</button>
@@ -859,7 +859,7 @@ async function loadOffice() {
       </div>`;
     }
 
-    // James (static — no agent entry, always "online")
+    // Owner (static — no agent entry, always "online")
     const jamesDesk = `
       <div class="desk-area boss">
         <div class="avatar-wrap">
