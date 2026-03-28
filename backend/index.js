@@ -205,7 +205,7 @@ app.get('/api/agents', (req, res) => {
       // Prepend main/default agent as first entry
       const mainEntry = {
         id: 'main',
-        name: statusMap['main']?.name || 'Main Agent',
+        name: 'Main Agent',
         role: 'Team Lead',
         status: statusMap['main']?.status || 'idle',
         avatar: statusMap['main']?.avatar || 'avatars/iron-man.png',
