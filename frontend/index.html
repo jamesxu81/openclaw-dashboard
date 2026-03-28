@@ -1131,16 +1131,26 @@ async function loadSettings() {
 function buildModelDropdown(currentValue) {
   const models = window._availableModels || [];
   // Always include current value even if not in API list
-  const allOptions = [...models];
-  if (currentValue && !allOptions.find(m => m.key === currentValue)) {
-    allOptions.unshift({ key: currentValue, name: currentValue });
+  const allModels = [...models];
+  if (currentValue && !allModels.find(m => m.key === currentValue)) {
+    allModels.unshift({ key: currentValue, name: currentValue });
   }
-  const opts = allOptions.map(m =>
-    `<option value="${esc(m.key)}" ${m.key === currentValue ? 'selected' : ''}>${esc(m.name || m.key)}${m.tags?.length ? ' (' + m.tags.join(', ') + ')' : ''}</option>`
-  ).join('');
+  // Group by provider (part before '/')
+  const groups = {};
+  for (const m of allModels) {
+    const provider = m.key.includes('/') ? m.key.split('/')[0] : 'other';
+    if (!groups[provider]) groups[provider] = [];
+    groups[provider].push(m);
+  }
+  const groupHtml = Object.entries(groups).sort(([a],[b]) => a.localeCompare(b)).map(([provider, items]) => {
+    const opts = items.map(m =>
+      `<option value="${esc(m.key)}" ${m.key === currentValue ? 'selected' : ''}>${esc(m.name || m.key.split('/')[1] || m.key)}${m.tags?.length ? ' ★' : ''}</option>`
+    ).join('');
+    return `<optgroup label="${esc(provider)}">${opts}</optgroup>`;
+  }).join('');
   return `<select style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-model-input">
     <option value="">— select model —</option>
-    ${opts}
+    ${groupHtml}
   </select>`;
 }
 function renderAgentsTable(agents, wsMap) {
