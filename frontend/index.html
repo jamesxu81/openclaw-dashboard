@@ -1091,10 +1091,10 @@ const sinceToday = Date.now() - elapsedMs; // for cron history API
 // ── Settings ──────────────────────────────────────────
 async function loadSettings() {
   try {
-    const [cfg, liveAgents, availableWorkspaces, defaultAgent] = await Promise.all([
+    const [cfg, liveAgents, availableModels, defaultAgent] = await Promise.all([
       fetch(API + '/api/config/full').then(r => r.json()),
       fetch(API + '/api/agents').then(r => r.json()),
-      fetch(API + '/api/workspaces').then(r => r.json()).catch(() => []),
+      fetch(API + '/api/models').then(r => r.json()).catch(() => []),
       fetch(API + '/api/default-agent').then(r => r.json()).catch(() => ({}))
     ]);
 
@@ -1103,8 +1103,8 @@ async function loadSettings() {
     document.getElementById('default-agent-model').textContent = defaultAgent.model || '—';
     document.getElementById('default-agent-workspace').textContent = defaultAgent.workspace || '—';
 
-    // Store workspaces globally for dropdowns
-    window._availableWorkspaces = availableWorkspaces || [];
+    // Store models globally for dropdowns
+    window._availableModels = availableModels || [];
 
     // App settings
     document.getElementById('cfg-app-name').value = cfg.app?.name || '';
@@ -1118,10 +1118,8 @@ async function loadSettings() {
 
     // Agents + Workspaces merged — use liveAgents for name/avatar, cfg for model/workspace
     const cfgAgents = cfg.adapter?.openclaw?.agents || [];
-    // Build a map of cfg data by id
     const cfgMap = {};
     cfgAgents.forEach(a => { cfgMap[a.id] = a; });
-    // Merge: liveAgents has name/avatar/status, cfgAgents has model/workspace
     const merged = liveAgents.map(a => ({
       ...a,
       model: cfgMap[a.id]?.model || a.model || '',
@@ -1130,19 +1128,18 @@ async function loadSettings() {
     renderAgentsTable(merged, {});
   } catch(e) { toast('Failed to load settings: ' + e.message); }
 }
-function buildWorkspaceDropdown(currentValue, wsMap, agentId) {
-  const workspaces = window._availableWorkspaces || [];
-  const currentWs = currentValue || wsMap[agentId] || wsMap[agentId?.replace('-agent','')] || '';
-  // Ensure current value is always an option (even if not in scanned list)
-  const allOptions = [...workspaces];
-  if (currentWs && !allOptions.find(w => w.path === currentWs)) {
-    allOptions.unshift({ name: 'current', path: currentWs });
+function buildModelDropdown(currentValue) {
+  const models = window._availableModels || [];
+  // Always include current value even if not in API list
+  const allOptions = [...models];
+  if (currentValue && !allOptions.find(m => m.key === currentValue)) {
+    allOptions.unshift({ key: currentValue, name: currentValue });
   }
-  const opts = allOptions.map(w =>
-    `<option value="${esc(w.path)}" ${w.path === currentWs ? 'selected' : ''}>${esc(w.name)} — ${esc(w.path)}</option>`
+  const opts = allOptions.map(m =>
+    `<option value="${esc(m.key)}" ${m.key === currentValue ? 'selected' : ''}>${esc(m.name || m.key)}${m.tags?.length ? ' (' + m.tags.join(', ') + ')' : ''}</option>`
   ).join('');
-  return `<select style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-ws-input">
-    <option value="">— select workspace —</option>
+  return `<select style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-model-input">
+    <option value="">— select model —</option>
     ${opts}
   </select>`;
 }
@@ -1153,8 +1150,8 @@ function renderAgentsTable(agents, wsMap) {
     <tr data-id="${esc(a.id||'')}" data-original-id="${esc(a.id||'')}">
       <td><input type="text" value="${esc(a.id||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-id-input"></td>
       <td><input type="text" value="${esc(a.name||'')}" placeholder="Display name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-name-input"></td>
-      <td><input type="text" value="${esc(a.model||'')}" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-model-input"></td>
-      <td>${buildWorkspaceDropdown(a.workspace, wsMap, a.id)}</td>
+      <td>${buildModelDropdown(a.model||'')}</td>
+      <td><input type="text" value="${esc(a.workspace || wsMap[a.id] || wsMap[a.id?.replace('-agent','')] || '')}" placeholder="/path/to/workspace" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-ws-input"></td>
       <td style="text-align:center">
         <img src="${esc(a.avatar||'avatars/iron-man.png')}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 4px;cursor:pointer" 
              onclick="triggerAvatarUpload('${esc(a.id||'')}', this)" title="Click to upload avatar">
@@ -1253,8 +1250,8 @@ function addAgentRow() {
   tr.innerHTML = `
     <td><input type="text" placeholder="agent-id" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-id-input"></td>
     <td><input type="text" placeholder="Display Name" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-name-input"></td>
-    <td><input type="text" placeholder="github-copilot/claude-sonnet-4.6" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-model-input"></td>
-    <td>${buildWorkspaceDropdown('', {}, '')}</td>
+    <td>${buildModelDropdown('')}</td>
+    <td><input type="text" placeholder="/path/to/workspace" style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" class="agent-ws-input"></td>
     <td style="text-align:center;color:var(--muted);font-size:11px">Save first</td>
     <td style="white-space:nowrap">
       <button onclick="saveAgentRow(this)" style="margin-right:4px">Save</button>
