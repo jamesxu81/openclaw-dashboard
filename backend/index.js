@@ -202,11 +202,10 @@ app.get('/api/agents', (req, res) => {
     try {
       const oc = JSON.parse(fs.readFileSync(ocPath, 'utf8'));
       const defaults = oc.agents?.defaults || {};
-      const ownerName = (() => { try { return JSON.parse(fs.readFileSync(configPath, 'utf8')).app?.ownerName || 'Main Agent'; } catch { return 'Main Agent'; } })();
       // Prepend main/default agent as first entry
       const mainEntry = {
         id: 'main',
-        name: statusMap['main']?.name || ownerName,
+        name: statusMap['main']?.name || 'Main Agent',
         role: 'Team Lead',
         status: statusMap['main']?.status || 'idle',
         avatar: statusMap['main']?.avatar || 'avatars/iron-man.png',
