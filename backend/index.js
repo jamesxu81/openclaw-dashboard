@@ -150,15 +150,40 @@ app.get('/api/cron/jobs/runs', (req, res) => {
 app.get('/api/default-agent', (req, res) => {
   try {
     const ocPath = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
-    if (!fs.existsSync(ocPath)) return res.json({ id: null, model: null, workspace: null });
+    if (!fs.existsSync(ocPath)) return res.json({ id: null, model: null, workspace: null, thinkingDefault: null });
     const oc = JSON.parse(fs.readFileSync(ocPath, 'utf8'));
-    const mainAgent = (oc.agents?.list || []).find(a => a.id === 'main');
     const defaults = oc.agents?.defaults || {};
     res.json({
-      id: mainAgent?.id || 'main',
-      model: (typeof mainAgent?.model === 'object' ? mainAgent?.model?.primary : mainAgent?.model) || (typeof defaults.model === 'object' ? defaults.model?.primary : defaults.model) || null,
-      workspace: mainAgent?.workspace || defaults.workspace || null
+      id: 'main',
+      model: (typeof defaults.model === 'object' ? defaults.model?.primary : defaults.model) || null,
+      workspace: defaults.workspace || null,
+      thinkingDefault: defaults.thinkingDefault || null
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/default-agent', (req, res) => {
+  try {
+    const ocPath = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
+    const oc = JSON.parse(fs.readFileSync(ocPath, 'utf8'));
+    if (!oc.agents) oc.agents = {};
+    if (!oc.agents.defaults) oc.agents.defaults = {};
+    const { model, workspace, thinkingDefault } = req.body;
+    if (model !== undefined) {
+      if (!oc.agents.defaults.model || typeof oc.agents.defaults.model === 'string') {
+        oc.agents.defaults.model = { primary: model, fallbacks: [] };
+      } else {
+        oc.agents.defaults.model.primary = model;
+      }
+    }
+    if (workspace !== undefined) oc.agents.defaults.workspace = workspace;
+    if (thinkingDefault !== undefined) oc.agents.defaults.thinkingDefault = thinkingDefault || undefined;
+    // Back up and save
+    fs.writeFileSync(ocPath + '.bak', fs.readFileSync(ocPath));
+    fs.writeFileSync(ocPath, JSON.stringify(oc, null, 2));
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

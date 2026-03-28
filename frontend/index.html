@@ -391,23 +391,40 @@
   <div id="tab-settings" class="tab">
     <h2>⚙️ Settings</h2>
 
-    <!-- Section 0: Default Agent (read-only info card) -->
-    <div class="card" style="margin-bottom:16px;background:var(--bg2,#f8f9fa)">
-      <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">🤖 Default Agent</h3>
-      <div id="default-agent-info" style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
-        <div>
-          <span style="font-size:12px;font-weight:600;color:var(--muted)">Agent ID</span><br>
-          <span id="default-agent-id" style="font-size:14px;font-weight:700;color:var(--text)">—</span>
+    <!-- Section 0: Default Agent (editable, no delete) -->
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:4px">🤖 Default Agent</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Global defaults applied to all agents. Cannot be removed.</p>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        <div style="min-width:120px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Agent ID</label>
+          <input type="text" value="main" disabled style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg2,#f1f3f5);color:var(--muted);cursor:not-allowed">
         </div>
-        <div>
-          <span style="font-size:12px;font-weight:600;color:var(--muted)">Model</span><br>
-          <span id="default-agent-model" style="font-size:13px;color:var(--text)">—</span>
+        <div style="flex:2;min-width:220px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Model</label>
+          <select id="default-agent-model" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+            <option value="">— loading models —</option>
+          </select>
         </div>
-        <div style="flex:1;min-width:200px">
-          <span style="font-size:12px;font-weight:600;color:var(--muted)">Workspace</span><br>
-          <span id="default-agent-workspace" style="font-size:12px;color:var(--muted);word-break:break-all">—</span>
+        <div style="min-width:160px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Thinking</label>
+          <select id="default-agent-thinking" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+            <option value="">— inherit —</option>
+            <option value="adaptive">adaptive — model decides</option>
+            <option value="off">off — no thinking</option>
+            <option value="minimal">minimal</option>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="xhigh">xhigh — maximum</option>
+          </select>
+        </div>
+        <div style="flex:2;min-width:220px">
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Workspace</label>
+          <input id="default-agent-workspace" type="text" placeholder="/path/to/workspace" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
         </div>
       </div>
+      <button class="btn-primary" onclick="saveDefaultAgent()">Save Default Agent</button>
     </div>
 
     <!-- Section 1: App Settings -->
@@ -1098,13 +1115,24 @@ async function loadSettings() {
       fetch(API + '/api/default-agent').then(r => r.json()).catch(() => ({}))
     ]);
 
-    // Default agent info card
-    document.getElementById('default-agent-id').textContent = defaultAgent.id || '—';
-    document.getElementById('default-agent-model').textContent = defaultAgent.model || '—';
-    document.getElementById('default-agent-workspace').textContent = defaultAgent.workspace || '—';
-
-    // Store models globally for dropdowns
+    // Store models globally for dropdowns (must happen before building selects)
     window._availableModels = availableModels || [];
+
+    // Default agent card — populate model dropdown then set values
+    const daModelSel = document.getElementById('default-agent-model');
+    daModelSel.innerHTML = '<option value="">— select model —</option>' +
+      Object.entries((availableModels || []).reduce((g, m) => {
+        const p = m.key.includes('/') ? m.key.split('/')[0] : 'other';
+        (g[p] = g[p] || []).push(m); return g;
+      }, {})).sort(([a],[b])=>a.localeCompare(b)).map(([prov, items]) =>
+        `<optgroup label="${esc(prov)}">${items.map(m =>
+          `<option value="${esc(m.key)}">${esc(m.name||m.key.split('/')[1]||m.key)}${m.tags?.length?' ★':''}</option>`
+        ).join('')}</optgroup>`
+      ).join('');
+    daModelSel.value = defaultAgent.model || '';
+    const daThinkSel = document.getElementById('default-agent-thinking');
+    daThinkSel.value = defaultAgent.thinkingDefault || '';
+    document.getElementById('default-agent-workspace').value = defaultAgent.workspace || '';
 
     // App settings
     document.getElementById('cfg-app-name').value = cfg.app?.name || '';
@@ -1128,6 +1156,19 @@ async function loadSettings() {
     }));
     renderAgentsTable(merged, {});
   } catch(e) { toast('Failed to load settings: ' + e.message); }
+}
+async function saveDefaultAgent() {
+  const model = document.getElementById('default-agent-model').value.trim();
+  const thinkingDefault = document.getElementById('default-agent-thinking').value.trim();
+  const workspace = document.getElementById('default-agent-workspace').value.trim();
+  try {
+    const r = await fetch(`${API}/api/default-agent`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ model, thinkingDefault, workspace })
+    }).then(r => r.json());
+    if (r.ok) toast('✅ Default agent saved');
+    else toast('❌ ' + (r.error || 'Save failed'));
+  } catch(e) { toast('❌ ' + e.message); }
 }
 function buildModelDropdown(currentValue) {
   const models = window._availableModels || [];
@@ -1189,7 +1230,7 @@ function renderAgentsTable(agents, wsMap) {
       </td>
       <td style="white-space:nowrap">
         <button onclick="saveAgentRow(this)" style="margin-right:4px">Save</button>
-        <button class="btn-danger" onclick="deleteAgentRow(this, '${esc(a.id||'')}')">Delete</button>
+        ${a.id === 'main' ? '<span style="font-size:11px;color:var(--muted);font-style:italic">default</span>' : `<button class="btn-danger" onclick="deleteAgentRow(this, '${esc(a.id||'')}')">Delete</button>`}
       </td>
     </tr>`).join('');
 }
