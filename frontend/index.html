@@ -76,11 +76,12 @@
   .btn-run.running{background:#dbeafe;color:#1e40af;border-color:#93c5fd;cursor:not-allowed}
   .btn-logs-sm{font-size:11px;padding:3px 8px}
   /* Card edit modal */
-  .modal-box textarea{width:100%;min-height:80px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px;resize:vertical;margin-top:8px}
+  .modal-box textarea{width:100%;min-height:300px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px;resize:vertical;margin-top:8px}
+  .modal-box input[type=text]{width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-top:8px}
   .modal-box label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-top:12px}
   #modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center}
   #modal.open{display:flex}
-  .modal-box{background:#fff;border-radius:12px;padding:24px;max-width:560px;width:90%;max-height:80vh;overflow:auto}
+  .modal-box{background:#fff;border-radius:12px;padding:24px;max-width:800px;width:95%;max-height:90vh;overflow:auto}
   .modal-box h3{margin-bottom:12px;font-size:16px}
   .modal-box pre{background:#f6f8fa;padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:400px}
   /* Digest */
@@ -457,6 +458,8 @@
     </div>
     <!-- Card edit fields (shown when editing a card) -->
     <div id="card-edit-fields" style="display:none">
+      <label>Card Title</label>
+      <input type="text" id="card-title-edit" placeholder="Card title…" />
       <label>Agent Type</label>
       <select id="card-agent-type">
         <option value="research">🔍 Research Agent</option>
@@ -1432,7 +1435,8 @@ function editCard(id, title) {
     document.getElementById('card-edit-fields').style.display = 'block';
     document.getElementById('modal-save-btn').style.display = 'inline-block';
     document.getElementById('card-agent-type').value = card?.agentType || _agentsCache[0]?.id || 'research-agent';
-    document.getElementById('card-details').value = card?.details || '';
+    document.getElementById('card-title-edit').value = card?.title || title;
+    document.getElementById('card-details').value = card?.details || card?.desc || '';
     document.getElementById('modal').classList.add('open');
   });
 }
@@ -1440,10 +1444,11 @@ function editCard(id, title) {
 async function saveCardEdit() {
   const agentType = document.getElementById('card-agent-type').value;
   const details = document.getElementById('card-details').value;
+  const title = document.getElementById('card-title-edit').value.trim();
   try {
     await fetch(`${API}/api/kanban/cards/${editingCardId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agentType, details })
+      body: JSON.stringify({ agentType, details, desc: details, title: title || undefined })
     });
     toast('✅ Card updated');
     closeModal();
