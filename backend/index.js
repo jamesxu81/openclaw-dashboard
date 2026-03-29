@@ -376,8 +376,11 @@ app.get('/api/office', (req, res) => res.json(load().office || { grid: [] }));
 app.get('/api/models', (req, res) => {
   try {
     const binPath = config.adapter?.openclaw?.binPath || '/opt/homebrew/bin/openclaw';
-    const out = execSync(`${binPath} models list --all --json`, { encoding: 'utf8', timeout: 10000 });
-    const data = JSON.parse(out);
+    const out = execSync(`${binPath} models list --all --json 2>/dev/null`, { encoding: 'utf8', timeout: 10000, shell: '/bin/bash' });
+    // Strip any non-JSON lines before the first '{'
+    const jsonStart = out.indexOf('{');
+    const clean = jsonStart >= 0 ? out.slice(jsonStart) : out;
+    const data = JSON.parse(clean);
     res.json(data.models || []);
   } catch (e) {
     console.error('[/api/models] Error:', e.message);
