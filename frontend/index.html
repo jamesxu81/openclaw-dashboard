@@ -660,9 +660,40 @@ async function loadKanban() {
       div.innerHTML = `<h3>${esc(col.title)} <span style="font-weight:400;color:var(--muted)">(${col.cards.length})</span></h3>
         <div class="kb-cards">${(col.id === 'done' ? [...(col.cards || [])].sort((a,b) => new Date(b.completedAt||0) - new Date(a.completedAt||0)) : (col.cards || [])).map(c => cardHTML(c, col.id)).join('')}</div>
         ${col.id === 'todo' ? `<div class="kb-add"><input placeholder="+ Add card…" onkeydown="addCard(event,'${col.id}')"></div>` : ''}`;
-      div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
+      div.addEventListener('dragover', e => {
+        e.preventDefault();
+        // Support intra-column reordering
+        if (dragFrom === col.id) {
+          div.classList.add('drag-over');
+          const target = e.target.closest('.kb-card');
+          if (target && target !== dragCard) {
+            const cards = [...div.querySelectorAll('.kb-card')];
+            const dragIdx = cards.indexOf(dragCard);
+            const targetIdx = cards.indexOf(target);
+            const cardsEl = div.querySelector('.kb-cards');
+            if (dragIdx > targetIdx) cardsEl.insertBefore(dragCard, target);
+            else cardsEl.insertBefore(dragCard, target.nextSibling);
+          }
+        } else {
+          div.classList.add('drag-over');
+        }
+      });
       div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
-      div.addEventListener('drop', e => { e.preventDefault(); div.classList.remove('drag-over'); dropCard(col.id); });
+      div.addEventListener('drop', async e => {
+        e.preventDefault();
+        div.classList.remove('drag-over');
+        if (dragFrom === col.id) {
+          // Intra-column reorder
+          const cardEls = [...div.querySelectorAll('.kb-card')];
+          const cardIds = cardEls.map(el => el.dataset.id);
+          await fetch(API + '/api/kanban/reorder', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ columnId: col.id, cardIds }) });
+          dragCard = null; dragFrom = null;
+          loadKanban();
+        } else {
+          dropCard(col.id);
+        }
+      });
       board.appendChild(div);
     });
   } catch(e) { board.innerHTML = `<p style="color:var(--err)">Failed to load kanban: ${e.message}</p>`; }

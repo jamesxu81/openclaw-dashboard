@@ -280,6 +280,21 @@ app.post('/api/kanban/cards', (req, res) => {
   col.cards.push(cardObj);
   save(d); res.json(cardObj);
 });
+app.put('/api/kanban/reorder', (req, res) => {
+  const d = load();
+  const { columnId, cardIds } = req.body;
+  const col = (d.kanban?.columns || []).find(c => c.id === columnId);
+  if (!col) return res.status(404).json({ error: 'column not found' });
+  // Reorder cards according to cardIds array
+  const cardMap = {};
+  col.cards.forEach(c => cardMap[c.id] = c);
+  const reordered = cardIds.map(id => cardMap[id]).filter(Boolean);
+  // Keep any cards not in cardIds at the end
+  const remaining = col.cards.filter(c => !cardIds.includes(c.id));
+  col.cards = [...reordered, ...remaining];
+  save(d); res.json({ ok: true });
+});
+
 app.put('/api/kanban/move', (req, res) => {
   const d = load();
   const { fromColumn, toColumn, cardId } = req.body;
