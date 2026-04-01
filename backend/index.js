@@ -62,6 +62,50 @@ function appendLog(cardId, line) {
   save(d);
 }
 
+// ── Startup: reconcile any cards stuck in doing/running ──────────────────
+// If the backend restarted while an agent run was in progress, in-memory proc
+// references are lost and proc.on('close') never fires. On startup we detect
+// these stuck cards and reset them to todo so they can be re-run.
+function reconcileStuckCards() {
+  try {
+    const d = load();
+    const doing = (d.kanban?.columns || []).find(c => c.id === 'doing');
+    const todo = (d.kanban?.columns || []).find(c => c.id === 'todo');
+    if (!doing || !todo) return;
+
+    const stuckCards = doing.cards.filter(c => c.agentStatus === 'running');
+    if (!stuckCards.length) return;
+
+    console.log(`[mission-control] Startup reconciliation: found ${stuckCards.length} stuck card(s) in doing/running`);
+    for (const card of stuckCards) {
+      console.log(`[mission-control] Reconciling stuck card: ${card.id} — "${card.title}"`);
+      card.agentStatus = 'todo';
+      if (!card.logs) card.logs = [];
+      card.logs.push(`[${new Date().toISOString()}] ⚠️ Reconciled on startup: backend restarted while agent was running. Card reset to todo for re-run.`);
+      // Move card back to todo
+      doing.cards = doing.cards.filter(c => c.id !== card.id);
+      todo.cards.push(card);
+    }
+
+    // Also reset any agent statuses that were left as 'running'
+    for (const agent of (d.agents || [])) {
+      if (agent.status === 'running') {
+        console.log(`[mission-control] Startup reconciliation: resetting agent ${agent.id} status running → idle`);
+        agent.status = 'idle';
+        agent.currentTask = null;
+      }
+    }
+
+    save(d);
+    console.log(`[mission-control] Startup reconciliation complete.`);
+  } catch (e) {
+    console.error(`[mission-control] Startup reconciliation error: ${e.message}`);
+  }
+}
+
+// Run reconciliation after a short delay so the server is ready first
+setTimeout(reconcileStuckCards, 2000);
+
 // ── Agent runner ──────────────────────────────────────
 app.post('/api/kanban/cards/:id/run', (req, res) => {
   const d = load();
@@ -112,6 +156,40 @@ app.patch('/api/kanban/cards/:id', (req, res) => {
     if (card) { Object.assign(card, req.body); save(d); return res.json(card); }
   }
   res.status(404).json({ error: 'Card not found' });
+});
+
+// ── Kanban completed feed ─────────────────────────────
+// Returns cards that completed (success or failure) since a given timestamp.
+// The main orchestrator polls this to know when to notify James.
+// Usage: GET /api/kanban/completed?since=<epochMs>
+// Returns: [ { id, title, success, completedAt, completionSummary, agentStatus } ]
+app.get('/api/kanban/completed', (req, res) => {
+  const since = req.query.since ? parseInt(req.query.since, 10) : 0;
+  const d = load();
+  const results = [];
+  for (const col of (d.kanban?.columns || [])) {
+    for (const card of (col.cards || [])) {
+      // A card is a completed event if it has completedAt and it's after `since`
+      if (card.completedAt) {
+        const ts = new Date(card.completedAt).getTime();
+        if (ts > since) {
+          results.push({
+            id: card.id,
+            title: card.title || '(untitled)',
+            column: col.id,
+            agentStatus: card.agentStatus || null,
+            completionSuccess: card.completionSuccess ?? (card.agentStatus === 'done'),
+            completedAt: card.completedAt,
+            completionSummary: card.completionSummary || null,
+            agentId: card.agentType || null,
+          });
+        }
+      }
+    }
+  }
+  // Newest first
+  results.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+  res.json(results);
 });
 
 // ── Crons ─────────────────────────────────────────────
