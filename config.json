@@ -12,7 +12,7 @@
   "adapter": {
     "openclaw": {
       "binPath": "/opt/homebrew/bin/openclaw",
-      "mcBase": "http://localhost:3002",
+      "mcBase": "http://localhost:3001",
       "workspaceRoot": "/Users/luckbot/.openclaw",
       "cronDir": "/Users/luckbot/.openclaw/cron",
       "workspaces": [],

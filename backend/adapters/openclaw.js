@@ -91,6 +91,31 @@ class OpenClawAdapter {
     } catch (e) { return []; }
   }
 
+  _getWorkspaceForAgent(agentId) {
+    this._initWorkspaces();
+    if (agentId === 'main') {
+      return this.workspaces.find(w => w.name === 'workspace') || null;
+    }
+    return this.workspaces.find(w => w.name === agentId) || null;
+  }
+
+  _getHotPathForAgent(agentId) {
+    const ws = this._getWorkspaceForAgent(agentId);
+    if (!ws) return null;
+    return path.join(ws.path, '.learnings', 'HOT.md');
+  }
+
+  _readHotForAgent(agentId) {
+    try {
+      const hotPath = this._getHotPathForAgent(agentId);
+      if (!hotPath || !fs.existsSync(hotPath)) return null;
+      const content = fs.readFileSync(hotPath, 'utf8').trim();
+      return content || null;
+    } catch {
+      return null;
+    }
+  }
+
   async runCard(card, cardId, appendLog, onComplete) {
     return new Promise(async (resolve) => {
       const agentType = card.agentType || 'research';
@@ -103,10 +128,21 @@ class OpenClawAdapter {
         return agentType;
       })();
 
-      const prompt = card.details ? `${card.title}\n\nDetails:\n${card.details}` : card.title;
+      const hotRules = this._readHotForAgent(agentId);
+      const prompt = [
+        hotRules
+          ? `Before doing anything else, read and obey these HOT rules for this agent. Keep them in mind throughout the task.\n\n${hotRules}`
+          : null,
+        card.details ? `${card.title}\n\nDetails:\n${card.details}` : card.title,
+      ].filter(Boolean).join('\n\n---\n\n');
       const mcBase = this.mcBase;
 
       appendLog(cardId, `🚀 Assigning to agent: ${agentId}`);
+      if (hotRules) {
+        appendLog(cardId, `🧠 HOT rules injected from ${this._getHotPathForAgent(agentId)}`);
+      } else {
+        appendLog(cardId, `ℹ️ No HOT.md found for ${agentId}; running without HOT injection`);
+      }
 
       // 1. Update agent status → running BEFORE spawning
       try {
