@@ -445,6 +445,15 @@
         <button onclick="addAgentRow()">+ Add Agent</button>
       </div>
     </div>
+
+    <!-- Section 4: Workspace SOUL Files -->
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:4px">🧬 Workspace SOUL Files</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Each workspace's <code style="font-size:11px;background:var(--hover);padding:1px 5px;border-radius:3px">SOUL.md</code> defines the agent's identity, personality, and working style. Edit and save changes directly here.</p>
+      <div id="soul-files-list">
+        <div style="color:var(--muted);font-size:13px;padding:16px 0">Loading workspace SOUL files…</div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -1163,6 +1172,8 @@ async function loadSettings() {
       _isDefault: true
     };
     renderAgentsTable([defaultRow, ...merged], {});
+    // Load SOUL files section
+    loadSoulFiles();
   } catch(e) { toast('Failed to load settings: ' + e.message); }
 }
 function buildModelDropdown(currentValue) {
@@ -1677,6 +1688,145 @@ fetch(`${API}/api/kanban`).then(r => r.json()).then(data => {
     for (const card of col.cards)
       if (card.agentStatus === 'running') pollCardUntilDone(card.id);
 }).catch(() => {});
+
+// ── SOUL Files ──────────────────────────────────────────────────────────────
+// Track original content per workspace so Cancel can restore
+const _soulOriginals = {};
+
+async function loadSoulFiles() {
+  const container = document.getElementById('soul-files-list');
+  if (!container) return;
+  try {
+    const workspaces = await fetch(`${API}/api/soul-files`).then(r => r.json());
+    if (!workspaces.length) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No workspaces found.</div>';
+      return;
+    }
+    container.innerHTML = workspaces.map(ws => buildSoulBlock(ws)).join('');
+    // Fetch SOUL.md content for each workspace
+    workspaces.forEach(ws => loadSoulContent(ws.name));
+  } catch(e) {
+    container.innerHTML = `<div style="color:#ef4444;font-size:13px">Failed to load workspaces: ${esc(e.message)}</div>`;
+  }
+}
+
+function buildSoulBlock(ws) {
+  const id = 'soul-' + ws.name;
+  const label = ws.name.replace('workspace-', '').replace('workspace', 'main');
+  const badge = ws.exists
+    ? '<span style="font-size:11px;background:#dcfce7;color:#166534;padding:2px 7px;border-radius:10px;margin-left:6px">exists</span>'
+    : '<span style="font-size:11px;background:#fef9c3;color:#854d0e;padding:2px 7px;border-radius:10px;margin-left:6px">new file</span>';
+  return `
+    <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:14px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--hover);border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:13px;font-weight:700">💼 ${esc(label)}</span>
+          ${badge}
+        </div>
+        <span style="font-size:11px;color:var(--muted);font-family:monospace">${esc(ws.path)}</span>
+      </div>
+      <div style="padding:12px 14px">
+        <textarea
+          id="${id}-textarea"
+          style="width:100%;min-height:220px;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;line-height:1.5;resize:vertical;box-sizing:border-box;background:var(--bg)"
+          spellcheck="false"
+          oninput="onSoulEdit('${ws.name}')"
+          placeholder="No SOUL.md yet — type here to create one…"
+        ></textarea>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <button id="${id}-save" class="btn-primary" style="display:none" onclick="saveSoul('${ws.name}')">Save</button>
+          <button id="${id}-cancel" style="display:none" onclick="cancelSoulEdit('${ws.name}')">Cancel</button>
+          <span id="${id}-status" style="font-size:12px;color:var(--muted)">Loading…</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function loadSoulContent(wsName) {
+  const id = 'soul-' + wsName;
+  const textarea = document.getElementById(id + '-textarea');
+  const status = document.getElementById(id + '-status');
+  if (!textarea) return;
+  try {
+    const data = await fetch(`${API}/api/soul-files/${encodeURIComponent(wsName)}`).then(r => r.json());
+    textarea.value = data.content || '';
+    _soulOriginals[wsName] = data.content || '';
+    status.textContent = data.exists ? '✓ Loaded' : '⚠ No SOUL.md — save to create';
+    status.style.color = data.exists ? 'var(--muted)' : '#854d0e';
+  } catch(e) {
+    status.textContent = '⚠ Failed to load';
+    status.style.color = '#ef4444';
+  }
+}
+
+function onSoulEdit(wsName) {
+  const id = 'soul-' + wsName;
+  const textarea = document.getElementById(id + '-textarea');
+  const saveBtn = document.getElementById(id + '-save');
+  const cancelBtn = document.getElementById(id + '-cancel');
+  const status = document.getElementById(id + '-status');
+  const isDirty = textarea.value !== (_soulOriginals[wsName] ?? '');
+  saveBtn.style.display = isDirty ? 'inline-block' : 'none';
+  cancelBtn.style.display = isDirty ? 'inline-block' : 'none';
+  if (isDirty) {
+    status.textContent = '● Unsaved changes';
+    status.style.color = '#f59e0b';
+  } else {
+    status.textContent = '✓ No changes';
+    status.style.color = 'var(--muted)';
+  }
+}
+
+function cancelSoulEdit(wsName) {
+  const id = 'soul-' + wsName;
+  const textarea = document.getElementById(id + '-textarea');
+  const saveBtn = document.getElementById(id + '-save');
+  const cancelBtn = document.getElementById(id + '-cancel');
+  const status = document.getElementById(id + '-status');
+  textarea.value = _soulOriginals[wsName] || '';
+  saveBtn.style.display = 'none';
+  cancelBtn.style.display = 'none';
+  status.textContent = '✓ Changes discarded';
+  status.style.color = 'var(--muted)';
+}
+
+async function saveSoul(wsName) {
+  const id = 'soul-' + wsName;
+  const textarea = document.getElementById(id + '-textarea');
+  const saveBtn = document.getElementById(id + '-save');
+  const cancelBtn = document.getElementById(id + '-cancel');
+  const status = document.getElementById(id + '-status');
+  const content = textarea.value;
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+  try {
+    const r = await fetch(`${API}/api/soul-files/${encodeURIComponent(wsName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    }).then(r => r.json());
+    if (r.ok) {
+      _soulOriginals[wsName] = content;
+      saveBtn.style.display = 'none';
+      cancelBtn.style.display = 'none';
+      status.textContent = '✅ Saved';
+      status.style.color = '#16a34a';
+      toast(`✅ SOUL.md saved for ${wsName.replace('workspace-','').replace('workspace','main')}`);
+      setTimeout(() => {
+        if (status) { status.textContent = '✓ Up to date'; status.style.color = 'var(--muted)'; }
+      }, 3000);
+    } else {
+      throw new Error(r.error || 'Save failed');
+    }
+  } catch(e) {
+    status.textContent = '❌ ' + e.message;
+    status.style.color = '#ef4444';
+    toast('❌ Failed to save: ' + e.message);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+  }
+}
 </script>
 </body>
 </html>

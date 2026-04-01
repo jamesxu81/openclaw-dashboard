@@ -660,5 +660,73 @@ app.patch('/api/config/full', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── SOUL Files ────────────────────────────────────────
+// List all workspaces with SOUL.md presence info
+app.get('/api/soul-files', (req, res) => {
+  try {
+    const workspaceRoot = config.adapter?.openclaw?.workspaceRoot || path.join(process.env.HOME, '.openclaw');
+    const results = [];
+    if (fs.existsSync(workspaceRoot)) {
+      const entries = fs.readdirSync(workspaceRoot, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.startsWith('workspace')) {
+          const wsPath = path.join(workspaceRoot, entry.name);
+          const soulPath = path.join(wsPath, 'SOUL.md');
+          results.push({
+            name: entry.name,
+            path: wsPath,
+            soulPath,
+            exists: fs.existsSync(soulPath)
+          });
+        }
+      }
+    }
+    results.sort((a, b) => a.name.localeCompare(b.name));
+    res.json(results);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Read SOUL.md for a specific workspace (name is base64url-encoded path)
+app.get('/api/soul-files/:wsName', (req, res) => {
+  try {
+    const workspaceRoot = config.adapter?.openclaw?.workspaceRoot || path.join(process.env.HOME, '.openclaw');
+    const wsName = req.params.wsName;
+    // Validate: only allow workspace-* or workspace folder names
+    if (!wsName.startsWith('workspace')) return res.status(400).json({ error: 'Invalid workspace name' });
+    const wsPath = path.join(workspaceRoot, wsName);
+    // Security: ensure wsPath is inside workspaceRoot
+    const resolved = path.resolve(wsPath);
+    if (!resolved.startsWith(path.resolve(workspaceRoot))) return res.status(403).json({ error: 'Forbidden' });
+    const soulPath = path.join(wsPath, 'SOUL.md');
+    if (!fs.existsSync(soulPath)) return res.json({ content: '', exists: false });
+    const content = fs.readFileSync(soulPath, 'utf8');
+    res.json({ content, exists: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Save SOUL.md for a specific workspace
+app.put('/api/soul-files/:wsName', (req, res) => {
+  try {
+    const workspaceRoot = config.adapter?.openclaw?.workspaceRoot || path.join(process.env.HOME, '.openclaw');
+    const wsName = req.params.wsName;
+    if (!wsName.startsWith('workspace')) return res.status(400).json({ error: 'Invalid workspace name' });
+    const wsPath = path.join(workspaceRoot, wsName);
+    const resolved = path.resolve(wsPath);
+    if (!resolved.startsWith(path.resolve(workspaceRoot))) return res.status(403).json({ error: 'Forbidden' });
+    if (!fs.existsSync(wsPath)) return res.status(404).json({ error: 'Workspace not found' });
+    const soulPath = path.join(wsPath, 'SOUL.md');
+    const { content } = req.body;
+    if (typeof content !== 'string') return res.status(400).json({ error: 'content (string) required' });
+    fs.writeFileSync(soulPath, content, 'utf8');
+    res.json({ ok: true, path: soulPath });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const PORT = process.env.PORT || config.backend?.port || 3001;
 app.listen(PORT, () => console.log(`[mission-control] Backend → http://localhost:${PORT} (adapter: ${adapterName})`));
