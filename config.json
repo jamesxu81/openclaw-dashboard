@@ -5,7 +5,7 @@
     "ownerName": "James Xu"
   },
   "backend": {
-    "port": 3002,
+    "port": 3001,
     "dataFile": "./data/data.json",
     "adapter": "openclaw"
   },
