@@ -660,72 +660,78 @@ app.patch('/api/config/full', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── SOUL Files ────────────────────────────────────────
-// List all workspaces with SOUL.md presence info
-app.get('/api/soul-files', (req, res) => {
+// ── Workspace Files ───────────────────────────────────
+// Shared helper: get workspaceRoot and validate wsName
+function _wsRoot() {
+  return config.adapter?.openclaw?.workspaceRoot || path.join(process.env.HOME, '.openclaw');
+}
+function _validateWs(wsName) {
+  if (!wsName || !wsName.startsWith('workspace')) return null;
+  const wsRoot = _wsRoot();
+  const wsPath = path.join(wsRoot, wsName);
+  const resolved = path.resolve(wsPath);
+  if (!resolved.startsWith(path.resolve(wsRoot) + path.sep) && resolved !== path.resolve(wsRoot)) return null;
+  return resolved;
+}
+// List all workspaces with their top-level files (files only, no dirs)
+const SKIP_FILES = new Set(['.DS_Store', '.gitkeep', 'Thumbs.db']);
+function listWsFiles(wsPath) {
   try {
-    const workspaceRoot = config.adapter?.openclaw?.workspaceRoot || path.join(process.env.HOME, '.openclaw');
+    return fs.readdirSync(wsPath, { withFileTypes: true })
+      .filter(e => e.isFile() && !SKIP_FILES.has(e.name))
+      .map(e => e.name)
+      .sort();
+  } catch { return []; }
+}
+app.get('/api/workspace-files', (req, res) => {
+  try {
+    const wsRoot = _wsRoot();
     const results = [];
-    if (fs.existsSync(workspaceRoot)) {
-      const entries = fs.readdirSync(workspaceRoot, { withFileTypes: true });
-      for (const entry of entries) {
+    if (fs.existsSync(wsRoot)) {
+      for (const entry of fs.readdirSync(wsRoot, { withFileTypes: true })) {
         if (entry.isDirectory() && entry.name.startsWith('workspace')) {
-          const wsPath = path.join(workspaceRoot, entry.name);
-          const soulPath = path.join(wsPath, 'SOUL.md');
-          results.push({
-            name: entry.name,
-            path: wsPath,
-            soulPath,
-            exists: fs.existsSync(soulPath)
-          });
+          const wsPath = path.join(wsRoot, entry.name);
+          results.push({ name: entry.name, path: wsPath, files: listWsFiles(wsPath) });
         }
       }
     }
     results.sort((a, b) => a.name.localeCompare(b.name));
     res.json(results);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Read SOUL.md for a specific workspace (name is base64url-encoded path)
-app.get('/api/soul-files/:wsName', (req, res) => {
+// List files for a single workspace
+app.get('/api/workspace-files/:wsName', (req, res) => {
   try {
-    const workspaceRoot = config.adapter?.openclaw?.workspaceRoot || path.join(process.env.HOME, '.openclaw');
-    const wsName = req.params.wsName;
-    // Validate: only allow workspace-* or workspace folder names
-    if (!wsName.startsWith('workspace')) return res.status(400).json({ error: 'Invalid workspace name' });
-    const wsPath = path.join(workspaceRoot, wsName);
-    // Security: ensure wsPath is inside workspaceRoot
-    const resolved = path.resolve(wsPath);
-    if (!resolved.startsWith(path.resolve(workspaceRoot))) return res.status(403).json({ error: 'Forbidden' });
-    const soulPath = path.join(wsPath, 'SOUL.md');
-    if (!fs.existsSync(soulPath)) return res.json({ content: '', exists: false });
-    const content = fs.readFileSync(soulPath, 'utf8');
-    res.json({ content, exists: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Save SOUL.md for a specific workspace
-app.put('/api/soul-files/:wsName', (req, res) => {
-  try {
-    const workspaceRoot = config.adapter?.openclaw?.workspaceRoot || path.join(process.env.HOME, '.openclaw');
-    const wsName = req.params.wsName;
-    if (!wsName.startsWith('workspace')) return res.status(400).json({ error: 'Invalid workspace name' });
-    const wsPath = path.join(workspaceRoot, wsName);
-    const resolved = path.resolve(wsPath);
-    if (!resolved.startsWith(path.resolve(workspaceRoot))) return res.status(403).json({ error: 'Forbidden' });
+    const wsPath = _validateWs(req.params.wsName);
+    if (!wsPath) return res.status(400).json({ error: 'Invalid workspace name' });
     if (!fs.existsSync(wsPath)) return res.status(404).json({ error: 'Workspace not found' });
-    const soulPath = path.join(wsPath, 'SOUL.md');
-    const { content } = req.body;
-    if (typeof content !== 'string') return res.status(400).json({ error: 'content (string) required' });
-    fs.writeFileSync(soulPath, content, 'utf8');
-    res.json({ ok: true, path: soulPath });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+    res.json({ name: req.params.wsName, path: wsPath, files: listWsFiles(wsPath) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Read a specific file from a workspace — ?file=filename (filename only, no path traversal)
+app.get('/api/workspace-files/:wsName/read', (req, res) => {
+  try {
+    const wsPath = _validateWs(req.params.wsName);
+    if (!wsPath) return res.status(400).json({ error: 'Invalid workspace name' });
+    const fileName = req.query.file;
+    if (!fileName || fileName.includes('/') || fileName.includes('\\') || fileName.startsWith('.')) {
+      return res.status(400).json({ error: 'Invalid file name' });
+    }
+    if (SKIP_FILES.has(fileName)) return res.status(400).json({ error: 'File not accessible' });
+    const filePath = path.join(wsPath, fileName);
+    // Final safety: must be directly inside wsPath
+    if (path.dirname(path.resolve(filePath)) !== wsPath) return res.status(403).json({ error: 'Forbidden' });
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    // Size limit: don't serve files over 512KB
+    const stat = fs.statSync(filePath);
+    if (stat.size > 512 * 1024) return res.status(413).json({ error: 'File too large (>512KB)' });
+    const content = fs.readFileSync(filePath, 'utf8');
+    res.json({ name: fileName, workspace: req.params.wsName, content, size: stat.size });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 const PORT = process.env.PORT || config.backend?.port || 3001;
