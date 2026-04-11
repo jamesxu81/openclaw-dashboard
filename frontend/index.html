@@ -1689,8 +1689,16 @@ fetch(`${API}/api/kanban`).then(r => r.json()).then(data => {
       if (card.agentStatus === 'running') pollCardUntilDone(card.id);
 }).catch(() => {});
 
-// ── Workspace Files Browser ────────────────────────────────────────────────
-const _wsState = { open: {}, selected: null };
+// ── Workspace Files Browser (Tree + Editor) ─────────────────────────────────────────────────────────
+const _wsState = {
+  open: {},          // wsName → bool (workspace panel open)
+  dirOpen: {},       // wsName + ':' + relPath → bool (folder expanded)
+  selected: null,    // 'wsName::relPath'
+  editing: false,
+  editOriginal: '',
+  editWs: null,
+  editPath: null,
+};
 
 async function loadWsFiles() {
   const container = document.getElementById('ws-files-list');
@@ -1706,6 +1714,9 @@ async function loadWsFiles() {
       if (_wsState.open[ws.name] === undefined) _wsState.open[ws.name] = (i === 0);
     });
     container.innerHTML = workspaces.map(ws => buildWsPanel(ws)).join('');
+    for (const ws of workspaces) {
+      if (_wsState.open[ws.name]) await refreshWsTree(ws.name);
+    }
   } catch(e) {
     container.innerHTML = `<div style="color:#ef4444;font-size:13px">Failed to load workspaces: ${esc(e.message)}</div>`;
   }
@@ -1715,99 +1726,181 @@ function buildWsPanel(ws) {
   const label = ws.name === 'workspace' ? 'workspace (main)' : ws.name.replace('workspace-', '');
   const isOpen = !!_wsState.open[ws.name];
   const chevron = isOpen ? '▾' : '▸';
-  const fileCount = ws.files ? ws.files.length : 0;
-  const bodyHtml = isOpen ? buildWsPanelBody(ws) : '';
   return `<div id="wspanel-${ws.name}" style="border:1px solid var(--border);border-radius:7px;margin-bottom:10px;overflow:hidden">
-      <div onclick="toggleWsPanel('${ws.name}')"
-           style="display:flex;align-items:center;justify-content:space-between;padding:9px 13px;background:var(--hover);cursor:pointer;user-select:none;border-bottom:${isOpen ? '1px solid var(--border)' : 'none'}">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:13px;color:var(--muted);font-weight:600">${chevron}</span>
-          <span style="font-size:13px;font-weight:700">💼 ${esc(label)}</span>
-          <span style="font-size:11px;color:var(--muted);font-family:monospace">${esc(ws.name)}</span>
+    <div onclick="toggleWsPanel('${ws.name}')"
+         style="display:flex;align-items:center;justify-content:space-between;padding:9px 13px;background:var(--hover);cursor:pointer;user-select:none;border-bottom:${isOpen ? '1px solid var(--border)' : 'none'}">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;color:var(--muted);font-weight:600">${chevron}</span>
+        <span style="font-size:13px;font-weight:700">💼 ${esc(label)}</span>
+        <span style="font-size:11px;color:var(--muted);font-family:monospace">${esc(ws.name)}</span>
+      </div>
+    </div>
+    <div id="wspanel-body-${ws.name}" style="display:${isOpen ? 'flex' : 'none'};min-height:360px">
+      <div id="wstree-${ws.name}" style="width:230px;min-width:180px;max-height:420px;overflow-y:auto;flex-shrink:0;border-right:1px solid var(--border);padding:6px 0">
+        <div style="color:var(--muted);font-size:12px;padding:8px 12px">Loading tree…</div>
+      </div>
+      <div id="wseditor-${ws.name}" style="flex:1;min-width:0;display:flex;flex-direction:column">
+        <div id="wseditor-body-${ws.name}" style="flex:1;padding:12px 14px;overflow:auto;min-height:320px">
+          <div style="color:var(--muted);font-size:12px">Select a file to view or edit.</div>
         </div>
-        <span style="font-size:11px;color:var(--muted)">${fileCount} file${fileCount !== 1 ? 's' : ''}</span>
       </div>
-      <div id="wspanel-body-${ws.name}" style="display:${isOpen ? 'flex' : 'none'}">
-        ${bodyHtml}
-      </div>
-    </div>`;
+    </div>
+  </div>`;
 }
 
-function buildWsPanelBody(ws) {
-  const files = ws.files || [];
-  if (!files.length) return '<div style="padding:12px 14px;color:var(--muted);font-size:12px;width:100%">No files in this workspace.</div>';
-  const fileItems = files.map(f => {
-    const key = ws.name + '::' + f;
-    const isSelected = _wsState.selected === key;
-    const ext = f.split('.').pop().toLowerCase();
-    const icon = ({md:'📝',json:'📋',sh:'🔧',txt:'📄',env:'🔑',js:'📜',py:'🐍',html:'🌐',scpt:'🍎'})[ext] || '📄';
-    const safeId = f.replace(/[^a-zA-Z0-9]/g,'_');
-    return `<div id="wsfile-${ws.name}-${safeId}"
-         onclick="selectWsFile('${ws.name}','${f.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${safeId}')"
-         style="padding:7px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-                background:${isSelected ? '#3b82f6' : 'transparent'};color:${isSelected ? '#fff' : 'inherit'}"
-         title="${esc(f)}">${icon} ${esc(f)}</div>`;
-  }).join('');
-  return `<div style="width:200px;min-width:160px;max-height:320px;overflow-y:auto;flex-shrink:0">${fileItems}</div>
-    <div id="wsviewer-${ws.name}" style="flex:1;min-width:0;border-left:1px solid var(--border)">
-      <div id="wsviewer-body-${ws.name}" style="padding:12px 14px;height:320px;overflow:auto">
-        <div style="color:var(--muted);font-size:12px">Select a file to view its contents.</div>
-      </div>
-    </div>`;
-}
-
-function toggleWsPanel(wsName) {
-  _wsState.open[wsName] = !_wsState.open[wsName];
-  fetch(`${API}/api/workspace-files/${encodeURIComponent(wsName)}`).then(r => r.json()).then(ws => {
-    const panel = document.getElementById('wspanel-' + wsName);
-    if (!panel) return;
-    const tmp = document.createElement('div');
-    tmp.innerHTML = buildWsPanel(ws);
-    panel.replaceWith(tmp.firstElementChild);
-    // Restore viewer content if this ws had a selected file
-    if (_wsState.selected && _wsState.selected.startsWith(wsName + '::') && _wsState.open[wsName]) {
-      const fileName = _wsState.selected.split('::')[1];
-      selectWsFile(wsName, fileName, fileName.replace(/[^a-zA-Z0-9]/g,'_'));
-    }
-  }).catch(() => {
-    const body = document.getElementById('wspanel-body-' + wsName);
-    if (body) body.style.display = _wsState.open[wsName] ? 'flex' : 'none';
-  });
-}
-
-async function selectWsFile(wsName, fileName, safeId) {
-  const key = wsName + '::' + fileName;
-  _wsState.selected = key;
-  // Highlight selected file row
-  const panelBody = document.getElementById('wspanel-body-' + wsName);
-  if (panelBody) {
-    panelBody.querySelectorAll('[id^="wsfile-' + wsName + '-"]').forEach(el => {
-      const mine = el.id === 'wsfile-' + wsName + '-' + (safeId || fileName.replace(/[^a-zA-Z0-9]/g,'_'));
-      el.style.background = mine ? '#3b82f6' : 'transparent';
-      el.style.color = mine ? '#fff' : 'inherit';
-    });
-  }
-  // Load content
-  const viewer = document.getElementById('wsviewer-body-' + wsName);
-  if (!viewer) return;
-  viewer.innerHTML = `<div style="color:var(--muted);font-size:12px">Loading ${esc(fileName)}…</div>`;
+async function refreshWsTree(wsName) {
+  const treeEl = document.getElementById('wstree-' + wsName);
+  if (!treeEl) return;
   try {
-    const data = await fetch(
-      `${API}/api/workspace-files/${encodeURIComponent(wsName)}/read?file=${encodeURIComponent(fileName)}`
-    ).then(r => r.json());
+    const data = await fetch(`${API}/api/workspace/tree?ws=${encodeURIComponent(wsName)}`).then(r => r.json());
+    if (data.error) throw new Error(data.error);
+    if (!data.children || !data.children.length) {
+      treeEl.innerHTML = '<div style="padding:8px 12px;color:var(--muted);font-size:12px">No files.</div>';
+      return;
+    }
+    treeEl.innerHTML = renderTreeNodes(wsName, data.children, '');
+  } catch(e) {
+    treeEl.innerHTML = `<div style="padding:8px 12px;color:#ef4444;font-size:12px">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+const FILE_ICONS = {md:'📝',json:'📋',sh:'🔧',txt:'📄',env:'🔑',js:'📜',ts:'📜',py:'🐍',html:'🌐',css:'🎨',scpt:'🍎',yml:'⚙️',yaml:'⚙️',toml:'⚙️',lock:'🔒',log:'📊',png:'🖼️',jpg:'🖼️',jpeg:'🖼️',gif:'🖼️',svg:'🖼️'};
+
+function renderTreeNodes(wsName, nodes, parentPath) {
+  return nodes.map(node => {
+    const relPath = parentPath ? parentPath + '/' + node.name : node.name;
+    const depth = parentPath ? parentPath.split('/').length : 0;
+    const indent = depth * 14 + 10;
+    if (node.type === 'dir') {
+      const key = wsName + ':' + relPath;
+      const isExpanded = !!_wsState.dirOpen[key];
+      const ch = isExpanded ? '▾' : '▸';
+      const children = isExpanded && node.children ? renderTreeNodes(wsName, node.children, relPath) : '';
+      const safeKey = relPath.replace(/[^a-zA-Z0-9]/g,'_');
+      return `<div>
+        <div onclick="toggleTreeDir('${wsName}','${relPath.replace(/'/g, "\\'")}',event)"
+             style="padding:5px 10px 5px ${indent}px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;color:var(--muted);user-select:none"
+             class="wstree-row">
+          <span style="font-size:11px;flex-shrink:0">${ch}</span>
+          <span style="font-weight:600">📁 ${esc(node.name)}</span>
+        </div>
+        <div id="wsdir-${wsName}-${safeKey}">${children}</div>
+      </div>`;
+    } else {
+      const key = wsName + '::' + relPath;
+      const isSelected = _wsState.selected === key;
+      const ext = node.name.split('.').pop().toLowerCase();
+      const icon = FILE_ICONS[ext] || '📄';
+      const safeKey = relPath.replace(/[^a-zA-Z0-9]/g,'_');
+      return `<div id="wstreeitem-${wsName}-${safeKey}"
+        onclick="selectWsFile('${wsName}','${relPath.replace(/'/g, "\\'")}')"
+        style="padding:5px 10px 5px ${indent}px;font-size:12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+               background:${isSelected ? '#3b82f6' : 'transparent'};color:${isSelected ? '#fff' : 'inherit'};"
+        class="wstree-row" title="${esc(relPath)}">${icon} ${esc(node.name)}</div>`;
+    }
+  }).join('');
+}
+
+async function toggleTreeDir(wsName, relPath, e) {
+  if (e) e.stopPropagation();
+  const key = wsName + ':' + relPath;
+  _wsState.dirOpen[key] = !_wsState.dirOpen[key];
+  await refreshWsTree(wsName);
+}
+
+async function toggleWsPanel(wsName) {
+  _wsState.open[wsName] = !_wsState.open[wsName];
+  const body = document.getElementById('wspanel-body-' + wsName);
+  const panel = document.getElementById('wspanel-' + wsName);
+  if (body) body.style.display = _wsState.open[wsName] ? 'flex' : 'none';
+  if (panel) {
+    const headerDiv = panel.querySelector('[onclick]');
+    if (headerDiv) headerDiv.style.borderBottom = _wsState.open[wsName] ? '1px solid var(--border)' : 'none';
+    const chevronEl = panel.querySelector('span[style*="font-size:13px"]');
+    if (chevronEl) chevronEl.textContent = _wsState.open[wsName] ? '▾' : '▸';
+  }
+  if (_wsState.open[wsName]) await refreshWsTree(wsName);
+}
+
+async function selectWsFile(wsName, relPath) {
+  const key = wsName + '::' + relPath;
+  _wsState.selected = key;
+  _wsState.editWs = wsName;
+  _wsState.editPath = relPath;
+
+  // Update tree highlights
+  document.querySelectorAll('.wstree-row[id^="wstreeitem-"]').forEach(el => {
+    const safeKey = relPath.replace(/[^a-zA-Z0-9]/g,'_');
+    if (el.id === 'wstreeitem-' + wsName + '-' + safeKey) {
+      el.style.background = '#3b82f6'; el.style.color = '#fff';
+    } else {
+      el.style.background = 'transparent'; el.style.color = 'inherit';
+    }
+  });
+
+  const editorBody = document.getElementById('wseditor-body-' + wsName);
+  if (!editorBody) return;
+  editorBody.innerHTML = `<div style="color:var(--muted);font-size:12px">Loading ${esc(relPath)}…</div>`;
+
+  try {
+    const data = await fetch(`${API}/api/workspace/file?ws=${encodeURIComponent(wsName)}&path=${encodeURIComponent(relPath)}`).then(r => r.json());
     if (data.error) throw new Error(data.error);
     const sizeKb = (data.size / 1024).toFixed(1);
-    const ext = fileName.split('.').pop().toLowerCase();
+    const ext = relPath.split('.').pop().toLowerCase();
     let displayContent = data.content;
     if (ext === 'json') { try { displayContent = JSON.stringify(JSON.parse(data.content), null, 2); } catch {} }
-    viewer.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
-        <span style="font-size:12px;font-weight:600">${esc(fileName)}</span>
-        <span style="font-size:10px;color:var(--muted)">${sizeKb} KB</span>
+    _wsState.editOriginal = displayContent;
+
+    editorBody.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:6px">
+        <span style="font-size:12px;font-weight:600;font-family:monospace">${esc(relPath)}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:10px;color:var(--muted)">${sizeKb} KB</span>
+          <button onclick="startWsEdit('${wsName}')" style="padding:3px 10px;font-size:11px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer">✏️ Edit</button>
+        </div>
       </div>
-      <pre style="font-size:11px;font-family:monospace;line-height:1.55;white-space:pre-wrap;word-break:break-all;margin:0">${esc(displayContent)}</pre>`;
+      <div id="wsview-content-${wsName}">
+        <pre style="font-size:11px;font-family:monospace;line-height:1.55;white-space:pre-wrap;word-break:break-all;margin:0">${esc(displayContent)}</pre>
+      </div>`;
   } catch(e) {
-    viewer.innerHTML = `<div style="color:#ef4444;font-size:12px">❌ ${esc(e.message)}</div>`;
+    editorBody.innerHTML = `<div style="color:#ef4444;font-size:12px">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+function startWsEdit(wsName) {
+  const contentDiv = document.getElementById('wsview-content-' + wsName);
+  if (!contentDiv) return;
+  contentDiv.innerHTML = `
+    <textarea id="wseditor-textarea-${wsName}"
+      style="width:100%;height:340px;font-size:11px;font-family:monospace;line-height:1.55;border:1px solid var(--border);border-radius:4px;padding:8px;resize:vertical;box-sizing:border-box;background:var(--bg);color:inherit"
+    ></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button onclick="saveWsFile('${wsName}')" style="padding:5px 14px;font-size:12px;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer">Save</button>
+      <button onclick="cancelWsEdit('${wsName}')" style="padding:5px 14px;font-size:12px;background:var(--hover);border:1px solid var(--border);border-radius:4px;cursor:pointer">Cancel</button>
+    </div>`;
+  document.getElementById('wseditor-textarea-' + wsName).value = _wsState.editOriginal;
+}
+
+function cancelWsEdit(wsName) {
+  selectWsFile(wsName, _wsState.editPath);
+}
+
+async function saveWsFile(wsName) {
+  const textarea = document.getElementById('wseditor-textarea-' + wsName);
+  if (!textarea) return;
+  const newContent = textarea.value;
+  try {
+    const r = await fetch(`${API}/api/workspace/file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ws: wsName, path: _wsState.editPath, content: newContent })
+    }).then(r => r.json());
+    if (r.error) throw new Error(r.error);
+    _wsState.editOriginal = newContent;
+    toast('✅ Saved: ' + _wsState.editPath);
+    selectWsFile(wsName, _wsState.editPath);
+  } catch(e) {
+    toast('❌ Save failed: ' + e.message);
   }
 }
 </script>

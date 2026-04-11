@@ -839,5 +839,78 @@ app.get('/api/workspace-files/:wsName/read', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Workspace Tree/File API ──────────────────────────────────────────────────
+const SKIP_TREE_DIRS = new Set(['node_modules', '.git', '__pycache__', '.next', 'dist', 'build', '.DS_Store', '.cache']);
+const SKIP_TREE_FILES = new Set(['.DS_Store', '.gitkeep', 'Thumbs.db']);
+const WS_MAX_DEPTH = 5;
+const WS_MAX_FILE_SIZE = 512 * 1024;
+
+function buildDirTree(dirPath, depth) {
+  if (depth > WS_MAX_DEPTH) return [];
+  let items;
+  try { items = fs.readdirSync(dirPath, { withFileTypes: true }); } catch { return []; }
+  const dirs = [], files = [];
+  for (const item of items) {
+    if (SKIP_TREE_DIRS.has(item.name)) continue;
+    if (item.isDirectory()) dirs.push(item.name);
+    else if (item.isFile() && !SKIP_TREE_FILES.has(item.name)) files.push(item.name);
+  }
+  dirs.sort((a, b) => a.localeCompare(b));
+  files.sort((a, b) => a.localeCompare(b));
+  const result = [];
+  for (const name of dirs) {
+    const children = buildDirTree(path.join(dirPath, name), depth + 1);
+    result.push({ type: 'dir', name, children });
+  }
+  for (const name of files) {
+    result.push({ type: 'file', name });
+  }
+  return result;
+}
+
+// GET /api/workspace/tree?ws=<wsName> — returns full folder tree
+app.get('/api/workspace/tree', (req, res) => {
+  try {
+    const wsPath = _validateWs(req.query.ws);
+    if (!wsPath) return res.status(400).json({ error: 'Invalid workspace name' });
+    if (!fs.existsSync(wsPath)) return res.status(404).json({ error: 'Workspace not found' });
+    const tree = buildDirTree(wsPath, 0);
+    res.json({ workspace: req.query.ws, children: tree });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/workspace/file?ws=<wsName>&path=<relPath> — read file with subdirectory support
+app.get('/api/workspace/file', (req, res) => {
+  try {
+    const wsPath = _validateWs(req.query.ws);
+    if (!wsPath) return res.status(400).json({ error: 'Invalid workspace name' });
+    if (!req.query.path) return res.status(400).json({ error: 'Missing path parameter' });
+    const filePath = path.resolve(wsPath, req.query.path);
+    // Path traversal protection
+    if (!filePath.startsWith(wsPath + path.sep)) return res.status(403).json({ error: 'Path traversal not allowed' });
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return res.status(404).json({ error: 'File not found' });
+    const stat = fs.statSync(filePath);
+    if (stat.size > WS_MAX_FILE_SIZE) return res.status(413).json({ error: 'File too large (>512KB)' });
+    const content = fs.readFileSync(filePath, 'utf8');
+    res.json({ path: req.query.path, workspace: req.query.ws, content, size: stat.size });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/workspace/file — save file content
+app.post('/api/workspace/file', (req, res) => {
+  try {
+    const { ws, path: relPath, content } = req.body;
+    if (!ws || !relPath || content === undefined) return res.status(400).json({ error: 'Missing ws, path, or content' });
+    const wsPath = _validateWs(ws);
+    if (!wsPath) return res.status(400).json({ error: 'Invalid workspace name' });
+    const filePath = path.resolve(wsPath, relPath);
+    // Path traversal protection
+    if (!filePath.startsWith(wsPath + path.sep)) return res.status(403).json({ error: 'Path traversal not allowed' });
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return res.status(404).json({ error: 'File not found' });
+    fs.writeFileSync(filePath, content, 'utf8');
+    res.json({ ok: true, path: relPath, workspace: ws });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 const PORT = process.env.PORT || config.backend?.port || 3001;
 app.listen(PORT, () => console.log(`[mission-control] Backend → http://localhost:${PORT} (adapter: ${adapterName})`));
