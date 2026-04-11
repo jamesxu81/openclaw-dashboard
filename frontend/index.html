@@ -1131,12 +1131,12 @@ async function loadSettings() {
     const [cfg, liveAgents, availableModels, defaultAgent] = await Promise.all([
       fetch(API + '/api/config/full').then(r => r.json()),
       fetch(API + '/api/agents').then(r => r.json()),
-      fetch(API + '/api/models').then(r => r.json()).catch(() => []),
-      fetch(API + '/api/default-agent').then(r => r.json()).catch(() => ({}))
+      fetch(API + '/api/models').then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch(API + '/api/default-agent').then(r => r.ok ? r.json() : ({})).catch(() => ({}))
     ]);
 
     // Store models globally for dropdowns (must happen before building selects)
-    window._availableModels = availableModels || [];
+    window._availableModels = Array.isArray(availableModels) ? availableModels : [];
 
     // App settings
     document.getElementById('cfg-app-name').value = cfg.app?.name || '';
@@ -1177,7 +1177,7 @@ async function loadSettings() {
   } catch(e) { toast('Failed to load settings: ' + e.message); }
 }
 function buildModelDropdown(currentValue) {
-  const models = window._availableModels || [];
+  const models = Array.isArray(window._availableModels) ? window._availableModels : [];
   // Always include current value even if not in API list
   const allModels = [...models];
   if (currentValue && !allModels.find(m => m.key === currentValue)) {

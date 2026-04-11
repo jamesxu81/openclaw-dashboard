@@ -25,9 +25,6 @@
       "cronHistoryEndpoint": "/api/cron/history",
       "cronJobsEndpoint": "/api/cron/jobs",
       "recentChangesEndpoint": "/api/changes"
-    },
-    "stub": {
-      "simulateDelays": false
     }
   },
   "frontend": {

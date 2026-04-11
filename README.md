@@ -144,7 +144,6 @@ Copy `config.example.json` → `config.json` and edit:
 | Adapter | Description |
 |---------|-------------|
 | `openclaw` | Full integration with OpenClaw — reads cron jobs, spawns agents, tracks git changes |
-| `stub` | Demo mode — no external dependencies, great for testing the UI |
 
 The REST adapter scaffold is included for future custom backends.
 
@@ -159,7 +158,6 @@ mission-control-board/
 │   ├── sync.js           # Data initialization
 │   └── adapters/
 │       ├── openclaw.js   # OpenClaw integration
-│       ├── stub.js       # Demo mode
 │       └── rest.js       # Generic REST (scaffold)
 ├── frontend/
 │   └── index.html        # Single-page app (vanilla JS)

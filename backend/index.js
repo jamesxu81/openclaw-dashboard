@@ -1,5 +1,5 @@
 // index.js — Mission Control Board backend
-// Adapter-driven: set "adapter" in config.json to "openclaw", "rest", or "stub"
+// Adapter-driven: set "adapter" in config.json to "openclaw" or "rest"
 
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -11,7 +11,7 @@ const { execSync } = require('child_process');
 // ── Config ────────────────────────────────────────────
 const configPath = path.join(__dirname, '..', 'config.json');
 const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
-const adapterName = process.env.MC_ADAPTER || config.backend?.adapter || 'stub';
+const adapterName = process.env.MC_ADAPTER || config.backend?.adapter || 'openclaw';
 const DATA = path.resolve(config.backend?.dataFile || path.join(__dirname, '..', 'data', 'data.json'));
 
 // ── Load Adapter ──────────────────────────────────────
@@ -19,8 +19,8 @@ let Adapter;
 try {
   Adapter = require(`./adapters/${adapterName}`);
 } catch (e) {
-  console.error(`[mission-control] Unknown adapter: "${adapterName}". Falling back to stub.`);
-  Adapter = require('./adapters/stub');
+  console.error(`[mission-control] Failed to load adapter "${adapterName}": ${e.stack || e.message}`);
+  process.exit(1);
 }
 const adapter = new Adapter(config);
 console.log(`[mission-control] Using adapter: ${adapterName}`);
@@ -454,15 +454,42 @@ app.get('/api/office', (req, res) => res.json(load().office || { grid: [] }));
 app.get('/api/models', (req, res) => {
   try {
     const binPath = config.adapter?.openclaw?.binPath || '/opt/homebrew/bin/openclaw';
-    const out = execSync(`${binPath} models list --all --json 2>/dev/null`, { encoding: 'utf8', timeout: 10000, shell: '/bin/bash' });
+    console.log('[/api/models] Fetching models list...');
+    const out = execSync(`${binPath} models list --all --json 2>/dev/null`, { 
+      encoding: 'utf8', 
+      timeout: 15000,  // Increased to 15s
+      shell: '/bin/bash',
+      maxBuffer: 10 * 1024 * 1024  // 10MB buffer for large model lists
+    });
     // Strip any non-JSON lines before the first '{'
     const jsonStart = out.indexOf('{');
     const clean = jsonStart >= 0 ? out.slice(jsonStart) : out;
     const data = JSON.parse(clean);
-    res.json(data.models || []);
+    const models = Array.isArray(data.models) ? data.models : [];
+    console.log(`[/api/models] Successfully fetched ${models.length} models`);
+    res.json(models);
   } catch (e) {
-    console.error('[/api/models] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    console.error('[/api/models] Error fetching models:', e.message);
+    console.error('[/api/models] Attempting fallback to configured models only...');
+    // Fallback: try without --all flag
+    try {
+      const binPath = config.adapter?.openclaw?.binPath || '/opt/homebrew/bin/openclaw';
+      const out = execSync(`${binPath} models list --json 2>/dev/null`, { 
+        encoding: 'utf8', 
+        timeout: 5000,
+        shell: '/bin/bash'
+      });
+      const jsonStart = out.indexOf('{');
+      const clean = jsonStart >= 0 ? out.slice(jsonStart) : out;
+      const data = JSON.parse(clean);
+      const models = Array.isArray(data.models) ? data.models : [];
+      console.log(`[/api/models] Fallback succeeded with ${models.length} configured models`);
+      res.json(models);
+    } catch (fallbackError) {
+      console.error('[/api/models] Fallback also failed:', fallbackError.message);
+      // Settings should still load even if model discovery fails completely.
+      res.json([]);
+    }
   }
 });
 
